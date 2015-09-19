@@ -1,0 +1,19 @@
+import cv2
+import numpy as np
+
+# original image
+image = cv2.imread('image.png')
+
+# mask (of course replace corners with yours)
+mask = np.zeros(image.shape, dtype=np.uint8)
+roi_corners = np.array([[(10,10), (300,300), (10,300)]], dtype=np.int32)
+white = (255, 255, 255)
+cv2.fillPoly(mask, roi_corners, white)
+
+# apply the mask
+masked_image = cv2.bitwise_and(image, mask)
+
+# display your handywork
+cv2.imshow('masked image', masked_image)
+cv2.waitKey()
+cv2.destroyAllWindows()
