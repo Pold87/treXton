@@ -1,6 +1,9 @@
+from __future__ import division
+
 import shlex
 import subprocess
 import cv2
+import numpy as np
 
 """
 
@@ -18,13 +21,32 @@ def create_centers(centers, matches):
               'DeepSkyBlue',
               'DeepSkyBlue4']
 
+
+
     strings = []
 
+
+    print len(matches)
+    heatmap_stepsize = 120 / (len(matches) - 1)
+
+    print heatmap_stepsize
+
+    
     for i, m in enumerate(matches):
 
+        hsv_color = np.uint8([[[120 - (i * heatmap_stepsize), 255, 128]]])
+
+        print hsv_color
+        
+        bgr_color = cv2.cvtColor(hsv_color,cv2.COLOR_HSV2BGR)
+        b, g, r = bgr_color[0, 0]
+        bgr_color = (int(b), int(g), int(r))
+        
         x, y = centers[m]
 
-        color_str = str(x) + ',' + str(y) + ' ' + colors[i]
+#         color_str = str(x) + ',' + str(y) + ' ' + colors[i] # Using the predefined colormap
+        color_str = str(x) + ',' + str(y) + \
+                    ' rgb(' + str(b) + ',' + str(g) + ',' + str(r) + ')' # Using 'dynamic' heatmap colors
         strings.append(color_str)
 
     return ' '.join(strings)

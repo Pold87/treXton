@@ -14,7 +14,11 @@ import subprocess
 import shlex
 import heatmap
 import time
-
+import sys
+import math
+from scipy import stats
+import emd
+from math import log, sqrt
 from scipy import spatial
 
 # TODO:
@@ -40,10 +44,33 @@ from scipy import spatial
 # Ideally, it can also determine if we are currently between two
 # clusters
 
+def xlog(xi, yi):
+    if xi == 0 or yi == 0:
+        return 0
+    else:
+        return xi*log(float(xi)/float(yi),2)
 
-def tf(histograms):
+def KLD(x,y):
+    """ Kullback Leibler divergence """
+    return sum([xlog(xi, yi) for xi, yi in zip(x, y)])
 
-    return np.sum(histograms, axis=0)
+def JSD(p, q):
+    """ Jensen Shannon divergence """
+    p = np.array(p)
+    q = np.array(q)
+    return sqrt(0.5* KLD(p, 0.5*(p + q)) + 0.5 * KLD(q, 0.5*(p + q)))
+
+def Jeffrey(p, q):
+    """ Jeffreys divergence """
+    j = 0
+    for a, b in zip(p, q):
+        if a == 0 or b == 0:
+            pass
+        else:
+            j += (a-b)*(log(a)-log(b))
+    return j
+
+
 
 def extract_textons(img, max_textons=None, texton_size=5):
 
@@ -92,7 +119,7 @@ def cluster_textons(textons, classifier):
     return classes
 
 
-def match_histograms(query_histogram, location_histogram):
+def match_histograms(query_histogram, location_histogram, weights=None):
 
     """
     Match query histogram with location histogram and return the
@@ -101,10 +128,22 @@ def match_histograms(query_histogram, location_histogram):
     
     # TODO: I could use the distance function as a parameter
 
-    dist = np.linalg.norm(query_histogram - location_histogram)
-    #dist = spatial.distance.cosine(query_histogram, location_histogram)
-    #cv2.compareHist(query_histogram, location_histogram, 0)
 
+    #dist = np.linalg.norm(query_histogram - location_histogram)
+    #dist = spatial.distance.cosine(query_histogram, location_histogram)
+
+    dist = cv2.compareHist(np.float32(query_histogram), np.float32(location_histogram), 4)
+    #dist = JSD(np.float32(query_histogram), np.float32(location_histogram))
+    #_, dist = stats.ks_2samp(query_histogram, location_histogram)
+    #dist = -dist
+ #   dist = cv2.EMD(np.float32(query_histogram), np.float32(location_histogram), 3)
+    #dist=  stats.entropy(np.float32(query_histogram), np.float32(location_histogram))
+
+    #f = np.float64([1] * len(query_histogram))
+    #s = np.float64([1] * len(query_histogram))
+    
+    #dist = emd.emd(np.float64(query_histogram), np.float64(location_histogram), f, s)
+    
     return dist
     
 
@@ -158,16 +197,13 @@ def img_to_texton_histogram(img, classifier, max_textons, n_clusters, weights=No
     return histogram
 
 
-def get_training_histograms(classifier, training_image, n_clusters=20):
+def get_training_histograms(classifier, training_image, num_patches_h, num_patches_w, clusters=20):
 
     """
     Split the input image into patches and calculate the histogram for each patch
     """
 
     h, w = training_image.shape
-
-    num_patches_h = 2
-    num_patches_w = 3
 
     # window_offset = (h / 2, w / 2)
     window_offset = None
@@ -186,7 +222,12 @@ def get_training_histograms(classifier, training_image, n_clusters=20):
                                                   n_clusters)
         histograms.append(patch_histogram)
         
-    weights = 1 / tf(histograms)
+    #weights = 1 / np.sum(histograms, axis=0) # 1 divided by term frequency
+
+
+    # print 'weights', weights
+    
+    weights = 1  # without weights
 
     return np.array(histograms), patches, weights
 
@@ -194,6 +235,8 @@ def get_training_histograms(classifier, training_image, n_clusters=20):
 def sliding_window_match(query_image,
                          location_image,
                          max_textons=None,
+                         num_patches_h=2,
+                         num_patches_w=3,
                          n_clusters=20,
                          SHOW_GRAPHS=True):
     
@@ -220,7 +263,11 @@ def sliding_window_match(query_image,
 
     # Get histogram of the textons of patches of the training image
     
-    training_histograms, patches, weights = get_training_histograms(classifier, training_image, n_clusters)
+    training_histograms, patches, weights = get_training_histograms(classifier,
+                                                                    training_image,
+                                                                    num_patches_h,
+                                                                    num_patches_w,
+                                                                    n_clusters)
 
     query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights)
     
@@ -246,7 +293,8 @@ def sliding_window_match(query_image,
     distances = []
 
     for training_histogram in training_histograms:
-        dist = match_histograms(query_histogram, weights * training_histogram)
+        #dist = match_histograms(query_histogram, weights * training_histogram)
+        dist = match_histograms(query_histogram, training_histogram, weights)
         distances.append(dist)
         
 
@@ -263,8 +311,12 @@ def display_query_and_location(query_image, location_image):
     fig_2.imshow(patches[patch_pos], 'Greys')
 
     plt.show()
-
-def color_map(location_img_c, num_patches_h, num_patches_w, matches, filename='heatmap.png', correct_answer=0):
+    
+    
+def color_map(location_img_c, num_patches_h, num_patches_w,
+              matches, filename='heatmap.png',
+              correct_answer=None,
+              top_left=None, bottom_right=None):
 
     h, w, c = location_img_c.shape
 
@@ -302,28 +354,80 @@ def color_map(location_img_c, num_patches_h, num_patches_w, matches, filename='h
                                 location_img_c, beta,
                                 1.0)
 
-    c_x, c_y = centers[correct_answer]
+    if correct_answer is not None:
+        c_x, c_y = centers[correct_answer]
 
-    overlayed = cv2.circle(overlayed, 
-                           (c_x, c_y), 
-                           40, 
-                           (128, 128, 128),
-                           -1)
+        overlayed = cv2.circle(overlayed, 
+                               (c_x, c_y), 
+                               40, 
+                               (128, 128, 128),
+                               -1)
 
-    print centers[correct_answer]
 
-#    plt.imshow(img_masked)
+    if top_left is not None:
+
+        overlayed = cv2.rectangle(overlayed,
+                                  top_left,
+                                  bottom_right,
+                                  (255, 0, 0),
+                                  10)
+                                  
+
+    fig = plt.figure()
+    fig.add_subplot(111)
+    
     plt.imshow(overlayed)
-    plt.show()
 
+    plt.show()
+        
     return centers
         
 
+def create_random_patch(img,
+                        min_window_width=100,
+                        min_window_height=100,
+                        max_window_width=300,
+                        max_window_height=300):
+
+    """
+
+    Extracts a random path from a given image and returns the image and
+    the coordinates in the original image.
+
+    """
+
+    h, w = img.shape
+
+    print "imageshape", img.shape
+
+    pos_y = np.random.randint(0, h - min_window_height)
+    pos_x = np.random.randint(0, w - min_window_width)
+
+
+    print "pos_y, pos_x", pos_y,pos_x
+    
+    
+    height = np.random.randint(min_window_height, min(h - pos_y, max_window_height))
+    width = np.random.randint(min_window_width, min(w - pos_x, max_window_width))
+
+    print 'height,widht', height, width
+
+    top_left = (pos_x, pos_y)
+    bottom_right = (pos_x + width, pos_y + height)
+    
+    patch = img[pos_y : pos_y + height, pos_x : pos_x + width]
+    
+    return patch, top_left, bottom_right
+    
+    
         
 if __name__ == "__main__":
 
-    num_patches_h = 2
-    num_patches_w = 3
+    READ_FROM_DISK = False
+    CREATE_ON_THE_FLY = True
+
+    num_patches_h = 6
+    num_patches_w = 6
 
     SHOW_GRAPHS = True
 
@@ -340,31 +444,46 @@ if __name__ == "__main__":
     #query_image_path = "righttopnotperfect.jpg"
     #query_image_path = "topmiddlenotperfect.jpg"
     
-    image_patches = [("maze17.jpg", "maze17topleft.png", 0),
-                     ("maze17.jpg", "entirerightnotperfect.jpg", 2),
-                     ("maze17.jpg", "righttopnotperfect.jpg", 2),
-                     ("maze17.jpg", "topmiddlenotperfect.jpg", 1),
-                     ("guy.jpg", "guynotidealmatch.png", 0),
-                     ("guy.jpg", "guybottomright.png", 5)]
+    image_patches = [#("maze17.jpg", "maze17topleft.png", 0),
+                     #("maze17.jpg", "entirerightnotperfect.jpg", 2),
+        ("maze17.jpg", "righttopnotperfect.jpg", 2),
+        ("maze17.jpg", "righttopnotperfect.jpg", 2),
+        ("maze17.jpg", "righttopnotperfect.jpg", 2),
+        ("maze17.jpg", "topmiddlenotperfect.jpg", 1),
+        ("guy.jpg", "guynotidealmatch.png", 0),
+        ("guy.jpg", "guynotidealmatch.png", 0),
+        ("guy.jpg", "guynotidealmatch.png", 0),
+        ("guy.jpg", "guynotidealmatch.png", 0),
+        ("guy.jpg", "guynotidealmatch.png", 0),
+        ("guy.jpg", "guynotidealmatch.png", 0),
+        ("guy.jpg", "guybottomright.png", 5)]
+        
 
     for i, (training_image_path, query_image_path, correct_answer) in enumerate(image_patches):
-                     
+
         training_image = cv2.imread(training_image_path, 0)
         training_img_c = cv2.imread(training_image_path, 1)
 
         #query_image_path = "tlpic.jpg"
-        query_image = cv2.imread(query_image_path, 0)
+
+        if READ_FROM_DISK:
+            query_image = cv2.imread(query_image_path, 0)
+
+        elif CREATE_ON_THE_FLY:
+            query_image, top_left, bottom_right = create_random_patch(training_image)
 
         # Max textons that are extracted from the input image
-        max_textons = 5000
+        max_textons = 8000
         #max_textons = None
 
         # Number of clusters (i.e. texton cluster centers)
-        n_clusters = 40
+        n_clusters = 50
 
         distances, patches = sliding_window_match(query_image=query_image,
                                                   location_image=training_image,
                                                   max_textons=max_textons,
+                                                  num_patches_h=num_patches_h,
+                                                  num_patches_w=num_patches_w,
                                                   n_clusters=n_clusters,
                                                   SHOW_GRAPHS=False)
 
@@ -378,4 +497,17 @@ if __name__ == "__main__":
         print ""
 
         #display_query_and_location(query_image, training_image)
-        color_map(training_img_c, num_patches_h, num_patches_w, patch_all_pos, str(i) + '.png', correct_answer)
+
+        if READ_FROM_DISK:
+            color_map(training_img_c, num_patches_h, num_patches_w, patch_all_pos, str(i) + '.png', correct_answer=correct_answer)
+
+
+        if CREATE_ON_THE_FLY:
+
+            print "Top left", top_left
+            print "Bottom right", bottom_right
+
+            #cv2.imshow('frame', query_image)
+            #cv2.waitKey(0)
+            
+            color_map(training_img_c, num_patches_h, num_patches_w, patch_all_pos, str(i) + '.png', top_left=top_left, bottom_right=bottom_right)
