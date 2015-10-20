@@ -1,5 +1,0 @@
-import cv2
-
-filename = '0.png'
-
-h_map = cv2.imread(filename, 0)
