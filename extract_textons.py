@@ -17,7 +17,7 @@ import time
 import sys
 import math
 from scipy import stats
-import emd
+#import emd
 from math import log, sqrt
 from scipy import spatial
 
@@ -446,17 +446,13 @@ if __name__ == "__main__":
     
     image_patches = [#("maze17.jpg", "maze17topleft.png", 0),
                      #("maze17.jpg", "entirerightnotperfect.jpg", 2),
-        ("maze17.jpg", "righttopnotperfect.jpg", 2),
-        ("maze17.jpg", "righttopnotperfect.jpg", 2),
-        ("maze17.jpg", "righttopnotperfect.jpg", 2),
-        ("maze17.jpg", "topmiddlenotperfect.jpg", 1),
-        ("guy.jpg", "guynotidealmatch.png", 0),
-        ("guy.jpg", "guynotidealmatch.png", 0),
-        ("guy.jpg", "guynotidealmatch.png", 0),
-        ("guy.jpg", "guynotidealmatch.png", 0),
-        ("guy.jpg", "guynotidealmatch.png", 0),
-        ("guy.jpg", "guynotidealmatch.png", 0),
-        ("guy.jpg", "guybottomright.png", 5)]
+        #("maze17.jpg", "righttopnotperfect.jpg", 2),
+        #("maze17.jpg", "righttopnotperfect.jpg", 2),
+        #("maze17.jpg", "righttopnotperfect.jpg", 2),
+        ("img/background.jpg", "topmiddlenotperfect.jpg", 1),
+        ("img/background.jpg", "topmiddlenotperfect.jpg", 1),
+        ("img/guy.jpg", "guynotidealmatch.png", 0),
+        ("img/guy.jpg", "guybottomright.png", 5)]
         
 
     for i, (training_image_path, query_image_path, correct_answer) in enumerate(image_patches):
@@ -473,7 +469,7 @@ if __name__ == "__main__":
             query_image, top_left, bottom_right = create_random_patch(training_image)
 
         # Max textons that are extracted from the input image
-        max_textons = 8000
+        max_textons = 6000
         #max_textons = None
 
         # Number of clusters (i.e. texton cluster centers)
