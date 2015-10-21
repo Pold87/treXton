@@ -7,6 +7,7 @@ import matplotlib.cm as cm
 import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.neighbors import NearestNeighbors, KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
 from collections import Counter
 from scipy.spatial import distance
 import texton_helpers
@@ -88,6 +89,32 @@ def extract_textons(img, max_textons=None, texton_size=5):
     patches = patches.reshape(-1, texton_size ** 2)
 
     return patches
+
+
+
+def extract_textons_color(img, max_textons=None, texton_size=5):
+
+    """
+    This function extract textons from an image. If max_textons is set
+    to None, all textons are extracted, otherwise random sampling is
+    used.
+    """
+
+    patches = image.extract_patches_2d(img, 
+                                       (texton_size, texton_size),
+                                       max_textons)
+
+    blues_p = patches[:, :, :, 0]
+    greens_p = patches[:, :, :, 1]
+    reds_p = patches[:, :, :, 2]
+
+    blues_p_flat = blues_p.reshape(-1, texton_size ** 2)
+    greens_p_flat = greens_p.reshape(-1, texton_size ** 2)
+    reds_p_flat = reds_p.reshape(-1, texton_size ** 2)
+    
+    all_p_flat = np.array((reds_p_flat, greens_p_flat, blues_p_flat))
+    
+    return all_p_flat
 
     
 def train_and_cluster_textons(textons, n_clusters=25):
@@ -197,13 +224,52 @@ def img_to_texton_histogram(img, classifier, max_textons, n_clusters, weights=No
     return histogram
 
 
-def get_training_histograms(classifier, training_image, num_patches_h, num_patches_w, clusters=20):
+def img_to_texton_histogram_color(img,
+                                  (classifier_r,
+                                  classifier_g,
+                                  classifier_b),
+                                  max_textons,
+                                  n_clusters,
+                                  weights=[1, 1, 1]):
+
+    # Extract all textons of the query image
+    textons_r, textons_g, textons_b  = extract_textons_color(img, max_textons)
+
+    # Get classes of textons of the query image
+    clusters_r = cluster_textons(textons_r, classifier_r)
+    clusters_g = cluster_textons(textons_g, classifier_g)
+    clusters_b = cluster_textons(textons_b, classifier_b)
+
+    # Get the frequency of each texton class of the query image
+    histogram_r = np.bincount(clusters_r,
+                            minlength=n_clusters) # minlength guarantees that missing clusters are set to 0 
+
+    histogram_g = np.bincount(clusters_g,
+                            minlength=n_clusters) # minlength guarantees that missing clusters are set to 0 
+
+    histogram_b = np.bincount(clusters_b,
+                            minlength=n_clusters) # minlength guarantees that missing clusters are set to 0 
+    
+                            
+    if weights is not None:
+        histogram_r = histogram_r * weights[0]
+        histogram_g = histogram_g * weights[1]
+        histogram_b = histogram_b * weights[2]
+
+    return np.concatenate((histogram_r, histogram_g, histogram_b))
+
+
+def get_training_histograms(classifier, training_image, num_patches_h, num_patches_w, n_clusters=20, max_textons=20):
 
     """
     Split the input image into patches and calculate the histogram for each patch
     """
 
-    h, w = training_image.shape
+    print training_image
+    print training_image.shape
+
+    h = training_image.shape[0]
+    w = training_image.shape[1]
 
     # window_offset = (h / 2, w / 2)
     window_offset = None
@@ -231,6 +297,128 @@ def get_training_histograms(classifier, training_image, num_patches_h, num_patch
 
     return np.array(histograms), patches, weights
 
+
+
+
+def train_classifier(location_image,
+                     max_textons=None,
+                     num_patches_h=2,
+                     num_patches_w=3,
+                     n_clusters=20):
+
+
+    # Extract patches of the training image
+    training_textons = extract_textons(location_image, max_textons)
+
+
+    # Apply k-Means on the training image
+    classifier, training_clusters, centers = train_and_cluster_textons(textons=training_textons, 
+                                                                       n_clusters=n_clusters)
+
+
+    # Get histogram of the textons of patches of the training image
+
+# TODO: seems to be unnecessary
+       
+#    training_histograms, patches, weights = get_training_histograms(classifier,
+#                                                                    location_image,
+#                                                                    num_patches_h,
+#                                                                    num_patches_w,
+#                                                                    n_clusters,
+#                                                                    max_textons)
+
+
+    histograms = []
+
+    y_top_left = []
+    y_bottom_right = []
+
+    rf_top_left = RandomForestRegressor(500)
+    rf_bottom_right = RandomForestRegressor(500)
+
+    #rf_top_left = ExtraTreesRegressor()
+    #rf_bottom_right = ExtraTreesRegressor()
+
+        
+    for i in range(10000):
+
+        # Create random patch with assumed position
+        query_image, top_left, bottom_right = create_random_patch(location_image)
+
+        y_top_left.append(top_left)
+        y_bottom_right.append(bottom_right)
+        
+        query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights)
+
+        histograms.append(query_histogram)
+
+    rf_top_left.fit(histograms, y_top_left)
+    rf_bottom_right.fit(histograms, y_bottom_right)
+
+    return rf_top_left, rf_bottom_right, histograms, y_top_left, y_bottom_right, classifier, weights
+
+
+
+def train_classifier_color(location_image,
+                           max_textons=None,
+                           num_patches_h=2,
+                           num_patches_w=3,
+                           n_clusters=20):
+    
+
+    # Extract patches of the training image
+    training_textons_r, training_textons_g, training_textons_b = extract_textons_color(location_image, max_textons)
+
+
+    # Apply k-Means on the training image
+    classifier_r, training_clusters_r, centers_r = train_and_cluster_textons(textons=training_textons_r, 
+                                                                       n_clusters=n_clusters)
+
+    classifier_g, training_clusters_g, centers_g = train_and_cluster_textons(textons=training_textons_g, 
+                                                                       n_clusters=n_clusters)
+
+    classifier_b, training_clusters_b, centers_b = train_and_cluster_textons(textons=training_textons_b, 
+                                                                       n_clusters=n_clusters)
+
+
+    histograms = []
+    weights = [1, 1, 1]
+    classifiers = [classifier_r, classifier_g, classifier_b]
+
+    y_top_left = []
+    y_bottom_right = []
+
+    rf_top_left = RandomForestRegressor(500)
+    rf_bottom_right = RandomForestRegressor(500)
+
+    #rf_top_left = ExtraTreesRegressor()
+    #rf_bottom_right = ExtraTreesRegressor()
+
+    plt.imshow(location_image)
+
+        
+    for i in range(10000):
+
+        # Create random patch with assumed position
+        query_image, top_left, bottom_right = create_random_patch_color(location_image)
+
+        y_top_left.append(top_left)
+        y_bottom_right.append(bottom_right)
+        
+        query_histogram = img_to_texton_histogram_color(query_image,
+                    classifiers,
+                    max_textons,
+                    n_clusters,
+                    weights)
+
+        histograms.append(query_histogram)
+
+    rf_top_left.fit(histograms, y_top_left)
+    rf_bottom_right.fit(histograms, y_bottom_right)
+
+    return rf_top_left, rf_bottom_right, histograms, y_top_left, y_bottom_right, classifiers, weights
+
+    
 
 def sliding_window_match(query_image,
                          location_image,
@@ -267,7 +455,8 @@ def sliding_window_match(query_image,
                                                                     training_image,
                                                                     num_patches_h,
                                                                     num_patches_w,
-                                                                    n_clusters)
+                                                                    n_clusters,
+                                                                    max_textons)
 
     query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights)
     
@@ -311,7 +500,8 @@ def display_query_and_location(query_image, location_image):
     fig_2.imshow(patches[patch_pos], 'Greys')
 
     plt.show()
-    
+
+
     
 def color_map(location_img_c, num_patches_h, num_patches_w,
               matches, filename='heatmap.png',
@@ -396,21 +586,22 @@ def create_random_patch(img,
 
     """
 
-    h, w = img.shape
+    h = img.shape[0]
+    w = img.shape[1]
 
-    print "imageshape", img.shape
+    # print "imageshape", img.shape
 
     pos_y = np.random.randint(0, h - min_window_height)
     pos_x = np.random.randint(0, w - min_window_width)
 
 
-    print "pos_y, pos_x", pos_y,pos_x
+    # print "pos_y, pos_x", pos_y,pos_x
     
     
     height = np.random.randint(min_window_height, min(h - pos_y, max_window_height))
     width = np.random.randint(min_window_width, min(w - pos_x, max_window_width))
 
-    print 'height,widht', height, width
+    # print 'height,widht', height, width
 
     top_left = (pos_x, pos_y)
     bottom_right = (pos_x + width, pos_y + height)
@@ -418,11 +609,47 @@ def create_random_patch(img,
     patch = img[pos_y : pos_y + height, pos_x : pos_x + width]
     
     return patch, top_left, bottom_right
-    
-    
-        
-if __name__ == "__main__":
 
+
+def create_random_patch_color(img,
+                            min_window_width=100,
+                            min_window_height=100,
+                            max_window_width=300,
+                            max_window_height=300):
+
+    """
+
+    Extracts a random path from a given image and returns the image and
+    the coordinates in the original image.
+
+    """
+
+    h = img.shape[0]
+    w = img.shape[1]
+
+    # print "imageshape", img.shape
+
+    pos_y = np.random.randint(0, h - min_window_height)
+    pos_x = np.random.randint(0, w - min_window_width)
+
+
+    # print "pos_y, pos_x", pos_y,pos_x
+    
+    
+    height = np.random.randint(min_window_height, min(h - pos_y, max_window_height))
+    width = np.random.randint(min_window_width, min(w - pos_x, max_window_width))
+
+    # print 'height,widht', height, width
+
+    top_left = (pos_x, pos_y)
+    bottom_right = (pos_x + width, pos_y + height)
+    
+    patch = img[pos_y : pos_y + height, pos_x : pos_x + width, :]
+    
+    return patch, top_left, bottom_right
+    
+
+def main():
     READ_FROM_DISK = False
     CREATE_ON_THE_FLY = True
 
@@ -469,7 +696,7 @@ if __name__ == "__main__":
             query_image, top_left, bottom_right = create_random_patch(training_image)
 
         # Max textons that are extracted from the input image
-        max_textons = 6000
+        max_textons = 1000
         #max_textons = None
 
         # Number of clusters (i.e. texton cluster centers)
@@ -507,3 +734,210 @@ if __name__ == "__main__":
             #cv2.waitKey(0)
             
             color_map(training_img_c, num_patches_h, num_patches_w, patch_all_pos, str(i) + '.png', top_left=top_left, bottom_right=bottom_right)
+
+
+def main2():
+    
+    READ_FROM_DISK = False
+    CREATE_ON_THE_FLY = True
+
+    num_patches_h = 6
+    num_patches_w = 6
+
+    SHOW_GRAPHS = True
+
+    training_image_path = 'webcam-take.jpg'
+
+    max_textons = 500
+    n_clusters = 40
+    
+    training_image = cv2.imread(training_image_path, 0)
+
+    rf_top_left, rf_bottom_right, histograms, y_top_left, y_bottom_right, classifier, weights = train_classifier(training_image,
+                     max_textons=max_textons,
+                     num_patches_h=2,
+                     num_patches_w=3,
+                     n_clusters=n_clusters)
+
+
+    test_on_trainset = False
+    
+    if test_on_trainset:
+        for patch in range(30):
+
+
+            pred_top_left = rf_top_left.predict([histograms[patch]])
+            pred_bottom_right = rf_bottom_right.predict([histograms[patch]])
+            print "pred is", pred_top_left, pred_bottom_right
+            print "real values", y_top_left[patch], y_bottom_right[patch]
+
+
+            overlayed = cv2.imread(training_image_path, 1)
+
+
+            overlayed = cv2.rectangle(overlayed,
+                                      (y_top_left[patch][0], y_top_left[patch][1]),
+                                      (y_bottom_right[patch][0], y_bottom_right[patch][1]),
+                                      (255, 0, 0),
+                                      10)
+
+
+            overlayed = cv2.rectangle(overlayed,
+                                      (int(pred_top_left[0][0]), int(pred_top_left[0][1])),
+                                      (int(pred_bottom_right[0][0]), int(pred_bottom_right[0][1])),
+                                      (0, 255, 0),
+                                      10)
+
+
+            plt.imshow(overlayed)
+            plt.show()
+
+    else:
+
+        for patch in range(20000):
+            # Create random patch with assumed position
+            query_image, top_left, bottom_right = create_random_patch(training_image)
+
+            query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights)
+
+
+            pred_top_left = rf_top_left.predict([query_histogram])
+            pred_bottom_right = rf_bottom_right.predict([query_histogram])
+            print "pred is", pred_top_left, pred_bottom_right
+            print "real values", top_left, bottom_right
+
+            overlayed = cv2.imread(training_image_path, 1)
+
+
+            overlayed = cv2.rectangle(overlayed,
+                                      top_left,
+                                      bottom_right,
+                                      (255, 0, 0),
+                                      10)
+
+
+            overlayed = cv2.rectangle(overlayed,
+                                      (int(pred_top_left[0][0]), int(pred_top_left[0][1])),
+                                      (int(pred_bottom_right[0][0]), int(pred_bottom_right[0][1])),
+                                      (0, 255, 0),
+                                      10)
+
+
+            plt.imshow(overlayed)
+            plt.show()
+
+
+            
+def main_video():
+
+    training_image_path = 'webcam-take.jpg'
+
+    max_textons = 1000
+    n_clusters = 50
+    
+    training_image = cv2.imread(training_image_path, 0) # gray scale
+    training_image = cv2.imread(training_image_path, 1) # color
+
+    rf_top_left, rf_bottom_right, histograms, y_top_left, y_bottom_right, classifier, weights = train_classifier(training_image,
+                     max_textons=max_textons,
+                     num_patches_h=2,
+                     num_patches_w=3,
+                     n_clusters=n_clusters)
+
+
+    test_on_trainset = False
+
+    video = cv2.VideoCapture(0)
+    
+    while video.isOpened():
+
+        ret, query_image = video.read()
+
+        query_img = cv2.cvtColor(query_image, cv2.COLOR_BGR2GRAY)
+        
+        query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights)
+
+        
+        pred_top_left = rf_top_left.predict([query_histogram])
+        pred_bottom_right = rf_bottom_right.predict([query_histogram])
+        print "pred is", pred_top_left, pred_bottom_right
+
+        overlayed = cv2.imread(training_image_path, 1)
+
+        overlayed = cv2.rectangle(overlayed,
+                                  (int(pred_top_left[0][0]), int(pred_top_left[0][1])),
+                                  (int(pred_bottom_right[0][0]), int(pred_bottom_right[0][1])),
+                                  (0, 255, 0),
+                                  10)
+
+        # Display the resulting frame
+        cv2.imshow('query_image', query_image)
+        cv2.imshow('frame', overlayed)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+
+
+    
+            
+def main_video_color():
+
+    training_image_path = 'webcam-take.jpg'
+
+    max_textons = 1000
+    n_clusters = 50
+    
+    training_image = cv2.imread(training_image_path, 1) # color
+
+    rf_top_left, rf_bottom_right, histograms, y_top_left, y_bottom_right, classifiers, weights = train_classifier_color(training_image,
+                     max_textons=max_textons,
+                     num_patches_h=2,
+                     num_patches_w=3,
+                     n_clusters=n_clusters)
+
+
+    test_on_trainset = False
+
+    video = cv2.VideoCapture(0)
+    
+    while video.isOpened():
+
+        ret, query_image = video.read()
+
+        query_histogram = img_to_texton_histogram_color(query_image, classifiers, max_textons, n_clusters, weights)
+
+
+        print query_histogram
+        print len(query_histogram)
+        
+        pred_top_left = rf_top_left.predict([query_histogram])
+        pred_bottom_right = rf_bottom_right.predict([query_histogram])
+        print "pred is", pred_top_left, pred_bottom_right
+
+        overlayed = cv2.imread(training_image_path, 1)
+
+        overlayed = cv2.rectangle(overlayed,
+                                  (int(pred_top_left[0][0]), int(pred_top_left[0][1])),
+                                  (int(pred_bottom_right[0][0]), int(pred_bottom_right[0][1])),
+                                  (0, 255, 0),
+                                  10)
+
+        # Display the resulting frame
+        cv2.imshow('query_image', query_image)
+        cv2.imshow('frame', overlayed)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+
+
+    
+
+
+
+                
+                    
+        
+if __name__ == "__main__":
+
+        main_video_color()
+

@@ -1,7 +1,0 @@
-import numpy as np
-
-
-
-
-a = np.arange(100)
-a.reshape(10, 10, -1)
