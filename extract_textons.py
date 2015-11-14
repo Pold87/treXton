@@ -5,6 +5,7 @@ from sklearn.feature_extraction import image
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import numpy as np
+import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.neighbors import NearestNeighbors, KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
@@ -21,6 +22,12 @@ from scipy import stats
 #import emd
 from math import log, sqrt
 from scipy import spatial
+import glob
+
+
+genimgs_path = "/home/pold87/Documents/Internship/draug/genimgs/"
+coordinates = pd.read_csv("/home/pold87/Documents/Internship/draug/targets.csv")
+num_draug_pics = 500
 
 # TODO:
 
@@ -89,6 +96,36 @@ def extract_textons(img, max_textons=None, texton_size=5):
     patches = patches.reshape(-1, texton_size ** 2)
 
     return patches
+
+
+def extract_textons_from_path(path, max_textons=100, texton_size=5):
+
+    """
+    This function extract textons from an image. If max_textons is set
+    to None, all textons are extracted, otherwise random sampling is
+    used.
+    """
+
+    genimgs = glob.glob(genimgs_path + '*.png')
+
+    all_patches = []
+
+    for genimg_file in genimgs[:num_draug_pics]:
+
+        genimg = cv2.imread(genimg_file, 0)
+
+        print(genimg_file)
+
+        patches = image.extract_patches_2d(genimg, 
+                                           (texton_size, texton_size),
+                                           max_textons)
+
+        # Flatten 2D array
+        patches = patches.reshape(-1, texton_size ** 2)
+
+        all_patches.extend(patches)
+
+    return all_patches
 
 
 
@@ -298,35 +335,16 @@ def get_training_histograms(classifier, training_image, num_patches_h, num_patch
     return np.array(histograms), patches, weights
 
 
-
-
 def train_classifier(location_image,
                      max_textons=None,
                      num_patches_h=2,
                      num_patches_w=3,
                      n_clusters=20):
 
-
-    # Extract patches of the training image
     training_textons = extract_textons(location_image, max_textons)
-
-
     # Apply k-Means on the training image
     classifier, training_clusters, centers = train_and_cluster_textons(textons=training_textons, 
                                                                        n_clusters=n_clusters)
-
-
-    # Get histogram of the textons of patches of the training image
-
-# TODO: seems to be unnecessary
-       
-#    training_histograms, patches, weights = get_training_histograms(classifier,
-#                                                                    location_image,
-#                                                                    num_patches_h,
-#                                                                    num_patches_w,
-#                                                                    n_clusters,
-#                                                                    max_textons)
-
 
     histograms = []
 
@@ -336,26 +354,69 @@ def train_classifier(location_image,
     rf_top_left = RandomForestRegressor(500)
     rf_bottom_right = RandomForestRegressor(500)
 
-    #rf_top_left = ExtraTreesRegressor()
-    #rf_bottom_right = ExtraTreesRegressor()
 
+    weights = 1
         
-    for i in range(10000):
-
+    for i in range(3000):
+    
         # Create random patch with assumed position
         query_image, top_left, bottom_right = create_random_patch(location_image)
-
+        
         y_top_left.append(top_left)
         y_bottom_right.append(bottom_right)
         
         query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights)
-
+        
         histograms.append(query_histogram)
-
-    rf_top_left.fit(histograms, y_top_left)
+        
     rf_bottom_right.fit(histograms, y_bottom_right)
+            
+    rf_top_left.fit(histograms, y_top_left)
+
 
     return rf_top_left, rf_bottom_right, histograms, y_top_left, y_bottom_right, classifier, weights
+
+
+
+def train_classifier_draug(path,
+                           max_textons=None,
+                           n_clusters=20):
+
+    # Extract patches of the training image
+    training_textons = extract_textons_from_path(path, max_textons)        
+
+    # Apply k-Means on the training image
+    classifier, training_clusters, centers = train_and_cluster_textons(textons=training_textons, 
+                                                                       n_clusters=n_clusters)
+    histograms = []
+
+    y_top_left = []
+    y_bottom_right = []
+
+    rf_top_left = RandomForestRegressor(500)
+    rf_bottom_right = RandomForestRegressor(500)
+
+    weights = 1
+
+    genimgs = glob.glob(genimgs_path + "*.png")
+
+    for i, genimg in enumerate(genimgs[:num_draug_pics]):
+
+        query_image = cv2.imread(genimg, 0)
+
+        top_left_x = coordinates.ix[i, "x"]
+        top_left_y = coordinates.ix[i, "y"]
+
+        y_top_left.append((top_left_x, top_left_y))
+
+        query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights)
+            
+        histograms.append(query_histogram)
+
+
+    rf_top_left.fit(histograms, y_top_left)
+
+    return rf_top_left, histograms, y_top_left, classifier, weights
 
 
 
@@ -746,7 +807,7 @@ def main2():
 
     SHOW_GRAPHS = True
 
-    training_image_path = 'webcam-take.jpg'
+    training_image_path = 'img/webcam-take.jpg'
 
     max_textons = 500
     n_clusters = 40
@@ -760,16 +821,17 @@ def main2():
                      n_clusters=n_clusters)
 
 
-    test_on_trainset = False
+    test_on_trainset = True
     
     if test_on_trainset:
-        for patch in range(30):
-
+        for patch in range(num_draug_pics):
 
             pred_top_left = rf_top_left.predict([histograms[patch]])
             pred_bottom_right = rf_bottom_right.predict([histograms[patch]])
             print "pred is", pred_top_left, pred_bottom_right
             print "real values", y_top_left[patch], y_bottom_right[patch]
+
+
 
 
             overlayed = cv2.imread(training_image_path, 1)
@@ -929,15 +991,35 @@ def main_video_color():
             break
 
 
-
+def main_draug():
     
+    SHOW_GRAPHS = True
+
+    max_textons = 500
+    n_clusters = 40
+    
+    path = genimgs_path
+
+    rf_top_left,  histograms, y_top_left, classifier, weights = train_classifier_draug(
+        path=path,
+        max_textons=max_textons,
+        n_clusters=n_clusters)
 
 
+    test_on_trainset = True
+    
+    if test_on_trainset:
+        for patch in range(num_draug_pics):
 
-                
-                    
+            pred_top_left = rf_top_left.predict([histograms[patch]])
+            print "pred is", pred_top_left
+            print "real values", y_top_left[patch]
+
+            print "diff x", abs(pred_top_left[0][0] - y_top_left[patch][0])
+            print "diff y", abs(pred_top_left[0][1] - y_top_left[patch][1])
+
         
 if __name__ == "__main__":
 
-        main_video_color()
+        main_draug()
 
