@@ -23,11 +23,13 @@ from scipy import stats
 from math import log, sqrt
 from scipy import spatial
 import glob
+import os
 
+base_dir = "/home/pold/Documents/draug/"
 
-genimgs_path = "/home/pold87/Documents/Internship/draug/genimgs/"
-coordinates = pd.read_csv("/home/pold87/Documents/Internship/draug/targets.csv")
-num_draug_pics = 500
+genimgs_path = base_dir + "genimgs/"
+coordinates = pd.read_csv(base_dir + "targets.csv")
+num_draug_pics = 950
 
 # TODO:
 
@@ -106,12 +108,14 @@ def extract_textons_from_path(path, max_textons=100, texton_size=5):
     used.
     """
 
-    genimgs = glob.glob(genimgs_path + '*.png')
+#    genimgs = glob.glob(genimgs_path + '*.png')
 
     all_patches = []
 
-    for genimg_file in genimgs[:num_draug_pics]:
+    for pic_num in range(num_draug_pics):
 
+        genimg_file = genimgs_path + str(pic_num) + ".png"
+        
         genimg = cv2.imread(genimg_file, 0)
 
         print(genimg_file)
@@ -398,15 +402,16 @@ def train_classifier_draug(path,
 
     weights = 1
 
-    genimgs = glob.glob(genimgs_path + "*.png")
+#    genimgs = glob.glob(genimgs_path + "*.png")
 
-    for i, genimg in enumerate(genimgs[:num_draug_pics]):
+    for i in range(num_draug_pics):
 
+        genimg = genimgs_path + str(i) + ".png"
+        
         query_image = cv2.imread(genimg, 0)
 
         top_left_x = coordinates.ix[i, "x"]
         top_left_y = coordinates.ix[i, "y"]
-
         y_top_left.append((top_left_x, top_left_y))
 
         query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights)
@@ -1009,14 +1014,36 @@ def main_draug():
     test_on_trainset = True
     
     if test_on_trainset:
-        for patch in range(num_draug_pics):
 
-            pred_top_left = rf_top_left.predict([histograms[patch]])
+        errors_x = []
+        errors_y = []
+        
+        for i in range(num_draug_pics):
+
+            query_file = genimgs_path + str(i) + ".png"
+            query_image = cv2.imread(query_file, 0)
+
+            # previously: histograms[patch]
+            histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights)
+
+            top_left_x = coordinates.ix[i, "x"]
+            top_left_y = coordinates.ix[i, "y"]
+            
+            pred_top_left = rf_top_left.predict([histogram])
             print "pred is", pred_top_left
-            print "real values", y_top_left[patch]
+            print "real values", (top_left_x, top_left_y)
 
-            print "diff x", abs(pred_top_left[0][0] - y_top_left[patch][0])
-            print "diff y", abs(pred_top_left[0][1] - y_top_left[patch][1])
+            diff_x = abs(pred_top_left[0][0] - top_left_x)
+            diff_y = abs(pred_top_left[0][1] - top_left_y)
+            
+            print "diff x", diff_x
+            print "diff y", diff_y
+
+            errors_x.append(diff_x)
+            errors_y.append(diff_y)
+
+        print("Mean error x", np.mean(errors_x))
+        print("Mean error y", np.mean(errors_y))
 
         
 if __name__ == "__main__":
