@@ -25,21 +25,17 @@ from scipy import spatial
 import glob
 import os
 
-base_dir = "/home/pold/Documents/draug/"
 
+# Settings
+base_dir = "/home/pold87/Documents/Internship/draug/"
 genimgs_path = base_dir + "genimgs/"
+testimgs_path = "/home/pold87/Downloads/imgs_first_flight/"
 coordinates = pd.read_csv(base_dir + "targets.csv")
-num_draug_pics = 950
-
-# TODO:
-
-# - HEATMAP Display query image in a better way (don't use GIMP
-# but cut it out on the fly)
-# 
-# Look at different distance measurements (Guido doesn't expect too
-# good results here)
-
-# Don't cut out only straight but also use rotations, and circles, etc.
+num_draug_pics = 300 # Number of pictures to include from draug
+num_test_pics = 200 # Number of pictures to include from draug
+test_on_trainset = True # Calculate error on trainset
+test_on_testset = True # Calculate predictons on testset (real world data)
+use_optitrack = False # Calculate errors on testset using Optitrack (real world data)
 
 # Idea: For an input image, calculate the histogram of clusters, i.e.
 # how often does each texton from the dictionary (i.e. the example
@@ -52,7 +48,7 @@ num_draug_pics = 950
 # original image (for example with a sliding window)
 
 # Ideally, it can also determine if we are currently between two
-# clusters
+# clusters.
 
 def xlog(xi, yi):
     if xi == 0 or yi == 0:
@@ -454,8 +450,6 @@ def main_draug():
         max_textons=max_textons,
         n_clusters=n_clusters)
 
-
-    test_on_trainset = True
     
     if test_on_trainset:
 
@@ -489,7 +483,30 @@ def main_draug():
         print("Mean error x", np.mean(errors_x))
         print("Mean error y", np.mean(errors_y))
 
-        
+    if test_on_testset:
+
+        predictions = []
+
+        for i in range(num_test_pics):
+
+            query_file = testimgs_path + str(i) + ".jpg"
+            query_image = cv2.imread(query_file, 0)
+
+            histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights)
+
+            pred_top_left = rf_top_left.predict([histogram])
+            print "pred is", pred_top_left
+
+            predictions.append(pred_top_left[0])
+
+        np.save("predictions", np.array(predictions))
+
+        if use_optitrack: 
+            pass
+            
+
+
+                
 if __name__ == "__main__":
 
         main_draug()

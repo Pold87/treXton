@@ -10,7 +10,7 @@ Main file is `extract_textons_draug.py`.
 
 1. Generate different views from an image using [draug](https://github.com/tudelft/draug).
 2. Modify the base_dir in `extract_textons_draug.py`  (in the beginning of the file) to the draug folder 
-3. Run `python `extract_textons_draug.py` (and make sure that you all all dependencies installed, like numpy, pandas, sklearn, ...)
+3. Run `python extract_textons_draug.py` (and make sure that you all all dependencies installed, like numpy, pandas, sklearn, ...)
 
 
 Basic algorithm:
