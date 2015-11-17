@@ -24,18 +24,33 @@ from math import log, sqrt
 from scipy import spatial
 import glob
 import os
+import argparse
 
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-n", "--num_draug_pics", type=int, help="The amount of draug pictures to use", default=100)
+parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=50)
+parser.add_argument("-d", "--dir", default="/home/pold/Documents/draug/", help="Path to draug directory")
+parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/imgs_first_flight/", help="Path to test images")
+parser.add_argument("-g", "--show_graphs", help="Show graphs of textons", action="store_true")
+parser.add_argument("-ttr", "--test_on_trainset", help="Test on trainset (calculate training error)", action="store_false")
+parser.add_argument("-tte", "--test_on_testset", help="Test on testset (calculate error)", action="store_false")
+parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=100)
+parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=500)
+parser.add_argument("-o", "--use_optitrack", help="Use optitrack", action="store_true")
+args = parser.parse_args()
 
 # Settings
-base_dir = "/home/pold87/Documents/Internship/draug/"
+base_dir = args.dir
 genimgs_path = base_dir + "genimgs/"
-testimgs_path = "/home/pold87/Downloads/imgs_first_flight/"
+testimgs_path = args.test_imgs_path
 coordinates = pd.read_csv(base_dir + "targets.csv")
-num_draug_pics = 300 # Number of pictures to include from draug
-num_test_pics = 200 # Number of pictures to include from draug
-test_on_trainset = True # Calculate error on trainset
-test_on_testset = True # Calculate predictons on testset (real world data)
-use_optitrack = False # Calculate errors on testset using Optitrack (real world data)
+num_draug_pics = args.num_draug_pics # Number of pictures to include from draug
+num_test_pics = args.num_test_pics # Number of pictures to test
+test_on_trainset = args.test_on_trainset # Calculate error on trainset
+test_on_testset = args.test_on_testset # Calculate predictons on testset (real world data)
+use_optitrack = args.use_optitrack # Calculate errors on testset using Optitrack (real world data)
+SHOW_GRAPHS = args.show_graphs
 
 # Idea: For an input image, calculate the histogram of clusters, i.e.
 # how often does each texton from the dictionary (i.e. the example
@@ -75,7 +90,6 @@ def Jeffrey(p, q):
         else:
             j += (a-b)*(log(a)-log(b))
     return j
-
 
 
 def extract_textons(img, max_textons=None, texton_size=5):
@@ -144,7 +158,10 @@ def train_and_cluster_textons(textons, n_clusters=25):
     predictions = k_means.fit_predict(np.float32(textons))
 
     # Texton class centers
-    centers = k_means.cluster_centers_     
+    centers = k_means.cluster_centers_
+
+    if SHOW_GRAPHS:
+        display_textons(centers)
 
     return k_means, predictions, centers
 
@@ -185,30 +202,32 @@ def match_histograms(query_histogram, location_histogram, weights=None):
     return dist
     
 
-def display_textons(textons, input_is_1D=False):
+def display_textons(textons, input_is_1D=False, save=True):
 
     """
     This function displays the input textons 
     """
 
-    if input_is_1D:
-        
-        l = len(textons[0])
-        s = np.sqrt(l)
-        w = int(s) 
+    l = len(textons[0])
+    s = np.sqrt(l)
+    w = int(s) 
 
-        textons = textons.reshape(-1, w, w)
+    textons = textons.reshape(-1, w, w)
 
     plt.figure(1) # Create figure
 
+    d = np.ceil(np.sqrt(len(textons)))
+    
     for i, texton in enumerate(textons):
 
-        plt.subplot(np.ceil(s), np.ceil(s), i + 1) 
+        plt.subplot(d, d, i + 1) 
         plt.imshow(texton, 
                    cmap = cm.Greys_r, 
                    interpolation="nearest")
     
+    plt.savefig("extract_textons.png")
     plt.show()
+
 
 
 def display_histogram(histogram):
@@ -233,45 +252,6 @@ def img_to_texton_histogram(img, classifier, max_textons, n_clusters, weights=No
         histogram = histogram * weights
 
     return histogram
-
-
-def get_training_histograms(classifier, training_image, num_patches_h, num_patches_w, n_clusters=20, max_textons=20):
-
-    """
-    Split the input image into patches and calculate the histogram for each patch
-    """
-
-    print training_image
-    print training_image.shape
-
-    h = training_image.shape[0]
-    w = training_image.shape[1]
-
-    # window_offset = (h / 2, w / 2)
-    window_offset = None
-    
-    patches = texton_helpers.sliding_window(training_image, (h / num_patches_h, w / num_patches_w), window_offset, True)
-
-    histograms = []
-
-    # TODO: Could be done faster with map (or other higher-order functions)?!
-    for patch in patches:
-        
-        # Extract textons for each patch
-        patch_histogram = img_to_texton_histogram(patch, 
-                                                  classifier, 
-                                                  max_textons, 
-                                                  n_clusters)
-        histograms.append(patch_histogram)
-        
-    #weights = 1 / np.sum(histograms, axis=0) # 1 divided by term frequency
-
-
-    # print 'weights', weights
-    
-    weights = 1  # without weights
-
-    return np.array(histograms), patches, weights
 
 
 def train_classifier_draug(path,
@@ -316,74 +296,6 @@ def train_classifier_draug(path,
     return rf_top_left, histograms, y_top_left, classifier, weights
 
 
-def sliding_window_match(query_image,
-                         location_image,
-                         max_textons=None,
-                         num_patches_h=2,
-                         num_patches_w=3,
-                         n_clusters=20,
-                         SHOW_GRAPHS=True):
-    
-    """
-    This function is the core function of this approach. It matches
-    the query image with the location image at different patches. TO
-    do this, it calculates the histogram of both images.
-    """
-
-    # I assume that I extract all textons from the training image and
-    # get the histogram for the different patches off-line. This
-    # should increase the speed of the algorithm.
-    
-    # Extract patches of the training image
-    training_textons = extract_textons(location_image, max_textons)
-
-    # Apply K-Means on the training image
-    classifier, training_clusters, centers = train_and_cluster_textons(textons=training_textons, 
-                                                                       n_clusters=n_clusters)
-
-    # Display dictionary of textons
-    if SHOW_GRAPHS:
-        display_textons(np.int32(centers), input_is_1D=True)
-
-    # Get histogram of the textons of patches of the training image
-    
-    training_histograms, patches, weights = get_training_histograms(classifier,
-                                                                    training_image,
-                                                                    num_patches_h,
-                                                                    num_patches_w,
-                                                                    n_clusters,
-                                                                    max_textons)
-
-    query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights)
-    
-    if SHOW_GRAPHS:
-        display_histogram(query_histogram)
-        
-        for patch in patches:
-
-            plt.imshow(patch, 
-                   cmap = cm.Greys_r)
-            plt.show()
-
-    
-    # Perform classification by comparing the histogram of the
-    # training and the query image (e.g. with nearest neighbors)
-   
-    # The output of the classification should be the position of the
-    # query image in the localization image.
-    
-    # TODO: match_histogram should be a helper function for a function
-    # that generates sliding windows and matches against them
-
-    distances = []
-
-    for training_histogram in training_histograms:
-        #dist = match_histograms(query_histogram, weights * training_histogram)
-        dist = match_histograms(query_histogram, training_histogram, weights)
-        distances.append(dist)
-        
-
-    return distances, patches
 
 def display_query_and_location(query_image, location_image):
 
@@ -438,10 +350,8 @@ def create_random_patch(img,
 
 def main_draug():
     
-    SHOW_GRAPHS = True
-
-    max_textons = 500
-    n_clusters = 40
+    max_textons = args.max_textons
+    n_clusters = args.num_textons
     
     path = genimgs_path
 
@@ -487,12 +397,17 @@ def main_draug():
 
         predictions = []
 
-        for i in range(num_test_pics):
+        offset = 50 # Discard the first pictures
+        for i in range(offset, offset + num_test_pics):
 
             query_file = testimgs_path + str(i) + ".jpg"
             query_image = cv2.imread(query_file, 0)
 
             histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights)
+
+            if SHOW_GRAPHS:
+                print("hello")
+                display_histogram(histogram)
 
             pred_top_left = rf_top_left.predict([histogram])
             print "pred is", pred_top_left

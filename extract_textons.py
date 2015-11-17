@@ -29,7 +29,7 @@ base_dir = "/home/pold/Documents/draug/"
 
 genimgs_path = base_dir + "genimgs/"
 coordinates = pd.read_csv(base_dir + "targets.csv")
-num_draug_pics = 950
+num_draug_pics = 5000
 
 # TODO:
 
@@ -1043,7 +1043,9 @@ def main_draug():
             errors_y.append(diff_y)
 
         print("Mean error x", np.mean(errors_x))
+        print("Std error x", np.std(errors_x))
         print("Mean error y", np.mean(errors_y))
+        print("Std error y", np.std(errors_y))
 
         
 if __name__ == "__main__":
