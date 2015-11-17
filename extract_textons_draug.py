@@ -224,6 +224,7 @@ def display_textons(textons, input_is_1D=False, save=True):
         plt.imshow(texton, 
                    cmap = cm.Greys_r, 
                    interpolation="nearest")
+        plt.set_axis_off()
     
     plt.savefig("extract_textons.png")
     plt.show()
@@ -406,7 +407,6 @@ def main_draug():
             histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights)
 
             if SHOW_GRAPHS:
-                print("hello")
                 display_histogram(histogram)
 
             pred_top_left = rf_top_left.predict([histogram])
