@@ -25,11 +25,12 @@ from scipy import spatial
 import glob
 import os
 import argparse
+from sklearn.externals import joblib
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-n", "--num_draug_pics", type=int, help="The amount of draug pictures to use", default=100)
-parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=50)
+parser.add_argument("-n", "--num_draug_pics", type=int, help="The amount of draug pictures to use", default=950)
+parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=200)
 parser.add_argument("-d", "--dir", default="/home/pold/Documents/draug/", help="Path to draug directory")
 parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/imgs_first_flight/", help="Path to test images")
 parser.add_argument("-g", "--show_graphs", help="Show graphs of textons", action="store_true")
@@ -224,7 +225,6 @@ def display_textons(textons, input_is_1D=False, save=True):
         plt.imshow(texton, 
                    cmap = cm.Greys_r, 
                    interpolation="nearest")
-        plt.set_axis_off()
     
     plt.savefig("extract_textons.png")
     plt.show()
@@ -361,6 +361,8 @@ def main_draug():
         max_textons=max_textons,
         n_clusters=n_clusters)
 
+
+    joblib.dump(rf_top_left, 'classifiers/randomforest.pkl') 
     
     if test_on_trainset:
 
@@ -398,7 +400,7 @@ def main_draug():
 
         predictions = []
 
-        offset = 50 # Discard the first pictures
+        offset = 30 # Discard the first pictures
         for i in range(offset, offset + num_test_pics):
 
             query_file = testimgs_path + str(i) + ".jpg"
