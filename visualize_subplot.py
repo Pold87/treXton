@@ -12,10 +12,12 @@ from matplotlib.offsetbox import TextArea, DrawingArea, OffsetImage, \
 from matplotlib._png import read_png
 import argparse
 from multiprocessing import Process, Value
+from sklearn.externals import joblib
 
 import thread
 import time
 import threading
+from extract_textons_draug import img_to_texton_histogram
 
 import seaborn as sns
 
@@ -25,6 +27,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/datasets/mat/", help="Path to test images")
 parser.add_argument("-m", "--mymap", default="../draug/img/bestnewmat.png", help="Path to the mat image")
 parser.add_argument("-p", "--predictions", default="predictions.npy", help="Path to the predictions of extract_textons_draug.py")
+parser.add_argument("-c", "--camera", default=False, help="Use camera for testing", action="store_true")
 
 args = parser.parse_args()
 
@@ -77,58 +80,128 @@ def show_graphs(v):
     xs = predictions[:, 0]
     ys = predictions[:, 1]
 
-    start_pic = 30
+    start_pic = 20
 
     minidrone = read_png("img/minidrone.png")
     imagebox = OffsetImage(minidrone, zoom=1)
     ax.imshow(background_map, zorder=0, extent=[0, x_width, -y_width / 2, y_width / 2])
 
-    optitrack = np.load("optitrack_coords.npy")
-    ax_opti = plt.subplot2grid((2,2), (1, 0), colspan=2)
-    ax_opti.set_title('OptiTrack ground truth')
-    line_opti, = ax_opti.plot([], [], lw=2)
-    ax_opti.set_xlim([-10, 10])
-    ax_opti.set_ylim([-10, 10])
 
+    if args.camera:
+        ax_opti = plt.subplot2grid((2,2), (1, 0), colspan=2)
+        ax_opti.set_title('Texton histogram')
+        line_opti, = ax_opti.plot([], [], lw=2)
 
-    xs_opti = optitrack[:, 0]
-    ys_opti = optitrack[:, 1]
-    ys_opti, xs_opti = rotate_coordinates(xs_opti, ys_opti, np.radians(37))
+    else:
+        
+        optitrack = np.load("optitrack_coords.npy")
+        ax_opti = plt.subplot2grid((2,2), (1, 0), colspan=2)
+        ax_opti.set_title('OptiTrack ground truth')
+        line_opti, = ax_opti.plot([], [], lw=2)
+        ax_opti.set_xlim([-10, 10])
+        ax_opti.set_ylim([-10, 10])
+        xs_opti = optitrack[:, 0]
+        ys_opti = optitrack[:, 1]
+        ys_opti, xs_opti = rotate_coordinates(xs_opti, ys_opti, np.radians(37))
 
     ax_inflight = plt.subplot2grid((2,2), (0, 1))
     ax_inflight.set_title('Pictures taken during flight')
 
-    for i in range(start_pic, len(xs)):
+    if args.camera:
 
-        while v.value != 0:
-            pass
+        # Load k-means
+        kmeans = joblib.load('classifiers/kmeans.pkl') 
         
-        img_path = path + str(i) + ".jpg"
+        # Load random forest
+        clf = joblib.load('classifiers/randomforest.pkl') 
+        
+        # Initialize camera
+        cap = cv2.VideoCapture(0)
 
-        xy = (xs[i], ys[i])
+        xs = []
+        ys = []
+        
+        i = 0
+        while True:
 
-        if i != start_pic:
-            drone_artist.remove()
-        ab = AnnotationBbox(imagebox, xy,
-        xycoords='data',
-        pad=0.0,
-        frameon=False)
+            # Capture frame-by-frame
+            ret, pic = cap.read()
 
-        line.set_xdata(xs[max(start_pic, i - 13):i])  # update the data
-        line.set_ydata(ys[max(start_pic, i - 13):i])
+            # Get texton histogram of picture
+            histogram = img_to_texton_histogram(pic,
+                                                kmeans,
+                                                500,
+                                                100,
+                                                1)
 
-        line_opti.set_xdata(xs_opti[max(start_pic, i - 25):i])  # update the data
-        line_opti.set_ydata(ys_opti[max(start_pic, i - 25):i])
+            # Predict coordinates using supervised learning
+            pred = clf.predict([histogram])
+            x = pred[0][0]
+            y = pred[0][1]
+            xs.append(x)
+            ys.append(y)
+            
+            xy = (x, y)
 
-        pic = mpimg.imread(img_path)
-        if i == start_pic:
-            img_artist = ax_inflight.imshow(pic)
-        else:
-            img_artist.set_data(pic)
+            # Update predictions graph
+            line.set_xdata(xs[max(0, i - 13):i]) 
+            line.set_ydata(ys[max(0, i - 13):i])
+            
+            ab = AnnotationBbox(imagebox, xy,
+                                xycoords='data',
+                                pad=0.0,
+                                frameon=False)
 
-        drone_artist = ax.add_artist(ab)
+            if i == 0:
+                histo_bar = ax_opti.bar(np.arange(len(histogram)), histogram)
+                img_artist = ax_inflight.imshow(pic)
+            else:
+                img_artist.set_data(pic)
+                drone_artist.remove()
+                
+                for rect, h in zip(histo_bar, histogram):
+                    rect.set_height(h)
+    
+            drone_artist = ax.add_artist(ab)
 
-        plt.pause(.001)
+            plt.pause(.1)
+            
+            i += 1
+        
+    else:
+        for i in range(start_pic, len(xs)):
+
+            while v.value != 0:
+                pass
+
+            img_path = path + str(i) + ".jpg"
+
+            xy = (xs[i], ys[i])
+
+            if i != start_pic:
+                drone_artist.remove()
+            ab = AnnotationBbox(imagebox, xy,
+            xycoords='data',
+            pad=0.0,
+            frameon=False)
+
+            # Update predictions graph
+            line.set_xdata(xs[max(start_pic, i - 13):i]) 
+            line.set_ydata(ys[max(start_pic, i - 13):i])
+
+            # Update optitrack graph
+            line_opti.set_xdata(xs_opti[max(start_pic, i - 25):i])  # update the data
+            line_opti.set_ydata(ys_opti[max(start_pic, i - 25):i])
+
+            pic = mpimg.imread(img_path)
+            if i == start_pic:
+                img_artist = ax_inflight.imshow(pic)
+            else:
+                img_artist.set_data(pic)
+
+            drone_artist = ax.add_artist(ab)
+
+            plt.pause(.1)
 
 
 if __name__ == "__main__":

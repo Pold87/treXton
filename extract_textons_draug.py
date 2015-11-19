@@ -28,45 +28,6 @@ import argparse
 from sklearn.externals import joblib
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-n", "--num_draug_pics", type=int, help="The amount of draug pictures to use", default=950)
-parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=500)
-parser.add_argument("-d", "--dir", default="/home/pold/Documents/draug/", help="Path to draug directory")
-parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/datasets/mat/", help="Path to test images")
-parser.add_argument("-s", "--start_pic_num", type=int, default=20, help="Discard the first pictures (offset)")
-parser.add_argument("-g", "--show_graphs", help="Show graphs of textons", action="store_true")
-parser.add_argument("-ttr", "--test_on_trainset", help="Test on trainset (calculate training error)", action="store_false")
-parser.add_argument("-tte", "--test_on_testset", help="Test on testset (calculate error)", action="store_false")
-parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=100)
-parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=500)
-parser.add_argument("-o", "--use_optitrack", help="Use optitrack", action="store_true")
-args = parser.parse_args()
-
-# Settings
-base_dir = args.dir
-genimgs_path = base_dir + "genimgs/"
-testimgs_path = args.test_imgs_path
-coordinates = pd.read_csv(base_dir + "targets.csv")
-num_draug_pics = args.num_draug_pics # Number of pictures to include from draug
-num_test_pics = args.num_test_pics # Number of pictures to test
-test_on_trainset = args.test_on_trainset # Calculate error on trainset
-test_on_testset = args.test_on_testset # Calculate predictons on testset (real world data)
-use_optitrack = args.use_optitrack # Calculate errors on testset using Optitrack (real world data)
-SHOW_GRAPHS = args.show_graphs
-
-# Idea: For an input image, calculate the histogram of clusters, i.e.
-# how often does each texton from the dictionary (i.e. the example
-# textons or texton cluster centers) occur.
-
-# Afterwards, we do the same for a part of the 'map' and use that for
-# a fast pre-localization algorithm
-
-# To do this, we compare the query image with different views of the
-# original image (for example with a sliding window)
-
-# Ideally, it can also determine if we are currently between two
-# clusters.
-
 def xlog(xi, yi):
     if xi == 0 or yi == 0:
         return 0
@@ -267,7 +228,8 @@ def train_classifier_draug(path,
     classifier, training_clusters, centers = train_and_cluster_textons(textons=training_textons, 
                                                                        n_clusters=n_clusters)
 
-    
+
+    joblib.dump(classifier, 'classifiers/kmeans.pkl') 
     
     histograms = []
 
@@ -353,6 +315,47 @@ def create_random_patch(img,
 
 
 def main_draug():
+
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-n", "--num_draug_pics", type=int, help="The amount of draug pictures to use", default=950)
+    parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=500)
+    parser.add_argument("-d", "--dir", default="/home/pold/Documents/draug/", help="Path to draug directory")
+    parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/datasets/mat/", help="Path to test images")
+    parser.add_argument("-s", "--start_pic_num", type=int, default=20, help="Discard the first pictures (offset)")
+    parser.add_argument("-g", "--show_graphs", help="Show graphs of textons", action="store_true")
+    parser.add_argument("-ttr", "--test_on_trainset", help="Test on trainset (calculate training error)", action="store_false")
+    parser.add_argument("-tte", "--test_on_testset", help="Test on testset (calculate error)", action="store_false")
+    parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=100)
+    parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=500)
+    parser.add_argument("-o", "--use_optitrack", help="Use optitrack", action="store_true")
+    args = parser.parse_args()
+
+    # Settings
+    base_dir = args.dir
+    genimgs_path = base_dir + "genimgs/"
+    testimgs_path = args.test_imgs_path
+    coordinates = pd.read_csv(base_dir + "targets.csv")
+    num_draug_pics = args.num_draug_pics # Number of pictures to include from draug
+    num_test_pics = args.num_test_pics # Number of pictures to test
+    test_on_trainset = args.test_on_trainset # Calculate error on trainset
+    test_on_testset = args.test_on_testset # Calculate predictons on testset (real world data)
+    use_optitrack = args.use_optitrack # Calculate errors on testset using Optitrack (real world data)
+    SHOW_GRAPHS = args.show_graphs
+
+    # Idea: For an input image, calculate the histogram of clusters, i.e.
+    # how often does each texton from the dictionary (i.e. the example
+    # textons or texton cluster centers) occur.
+
+    # Afterwards, we do the same for a part of the 'map' and use that for
+    # a fast pre-localization algorithm
+
+    # To do this, we compare the query image with different views of the
+    # original image (for example with a sliding window)
+
+    # Ideally, it can also determine if we are currently between two
+    # clusters.
+
     
     max_textons = args.max_textons
     n_clusters = args.num_textons
