@@ -30,9 +30,10 @@ from sklearn.externals import joblib
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-n", "--num_draug_pics", type=int, help="The amount of draug pictures to use", default=950)
-parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=200)
+parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=500)
 parser.add_argument("-d", "--dir", default="/home/pold/Documents/draug/", help="Path to draug directory")
-parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/imgs_first_flight/", help="Path to test images")
+parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/datasets/mat/", help="Path to test images")
+parser.add_argument("-s", "--start_pic_num", type=int, default=20, help="Discard the first pictures (offset)")
 parser.add_argument("-g", "--show_graphs", help="Show graphs of textons", action="store_true")
 parser.add_argument("-ttr", "--test_on_trainset", help="Test on trainset (calculate training error)", action="store_false")
 parser.add_argument("-tte", "--test_on_testset", help="Test on testset (calculate error)", action="store_false")
@@ -153,7 +154,7 @@ def train_and_cluster_textons(textons, n_clusters=25):
     """
 
     # TODO: Look at different parameters of n_init
-    k_means = KMeans(n_clusters=n_clusters, n_init=10)
+    k_means = KMeans(n_clusters=n_clusters, n_init=10, n_jobs=-1)
 
     # Predicted classes for the input textons
     predictions = k_means.fit_predict(np.float32(textons))
@@ -265,13 +266,15 @@ def train_classifier_draug(path,
     # Apply k-Means on the training image
     classifier, training_clusters, centers = train_and_cluster_textons(textons=training_textons, 
                                                                        n_clusters=n_clusters)
+
+    
+    
     histograms = []
 
     y_top_left = []
     y_bottom_right = []
 
-    rf_top_left = RandomForestRegressor(500)
-    rf_bottom_right = RandomForestRegressor(500)
+    rf_top_left = RandomForestRegressor(500, n_jobs=-1)
 
     weights = 1
 
@@ -400,7 +403,7 @@ def main_draug():
 
         predictions = []
 
-        offset = 30 # Discard the first pictures
+        offset = args.start_pic_num # Discard the first pictures
         for i in range(offset, offset + num_test_pics):
 
             query_file = testimgs_path + str(i) + ".jpg"
