@@ -23,3 +23,7 @@ Basic algorithm:
 
 The code needs quite some refactoring, since it still includes a lot of
 experimental stuff.
+
+## Visualization
+![Visualization](https://github.com/tudelft/treXton/treXton.png)
+
