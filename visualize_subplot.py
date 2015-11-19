@@ -28,6 +28,9 @@ parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/dat
 parser.add_argument("-m", "--mymap", default="../draug/img/bestnewmat.png", help="Path to the mat image")
 parser.add_argument("-p", "--predictions", default="predictions.npy", help="Path to the predictions of extract_textons_draug.py")
 parser.add_argument("-c", "--camera", default=False, help="Use camera for testing", action="store_true")
+parser.add_argument("-mo", "--mode", default=0, help="Use the camera (0), test on train pictures (1), test on test pictures (3)", type=int)
+parser.add_argument("-s", "--start_pic", default=950, help="Starting picture (offset)", type=int)
+parser.add_argument("-n", "--num_pictures", default=49, help="Amount of pictures for testing", type=int)
 
 args = parser.parse_args()
 
@@ -80,20 +83,27 @@ def show_graphs(v):
     xs = predictions[:, 0]
     ys = predictions[:, 1]
 
-    start_pic = 20
-
     minidrone = read_png("img/minidrone.png")
     imagebox = OffsetImage(minidrone, zoom=1)
     ax.imshow(background_map, zorder=0, extent=[0, x_width, -y_width / 2, y_width / 2])
 
 
-    if args.camera:
+    if args.mode == 0:
         ax_opti = plt.subplot2grid((2,2), (1, 0), colspan=2)
         ax_opti.set_title('Texton histogram')
         line_opti, = ax_opti.plot([], [], lw=2)
 
-    else:
+    elif args.mode == 1:
+        ax_opti = plt.subplot2grid((2,2), (1, 0), colspan=2)
+        ax_opti.set_title('Texton histogram')
+        line_opti, = ax_opti.plot([], [], lw=2)
+
+        optitrack = pd.read_csv("../draug/targets.csv")
+        xs_opti = optitrack.x
+        ys_opti = optitrack.y
         
+        
+    elif args.mode == 2:
         optitrack = np.load("optitrack_coords.npy")
         ax_opti = plt.subplot2grid((2,2), (1, 0), colspan=2)
         ax_opti.set_title('OptiTrack ground truth')
@@ -104,19 +114,21 @@ def show_graphs(v):
         ys_opti = optitrack[:, 1]
         ys_opti, xs_opti = rotate_coordinates(xs_opti, ys_opti, np.radians(37))
 
+
     ax_inflight = plt.subplot2grid((2,2), (0, 1))
     ax_inflight.set_title('Pictures taken during flight')
 
-    if args.camera:
-
-        # Load k-means
-        kmeans = joblib.load('classifiers/kmeans.pkl') 
+    # Load k-means
+    kmeans = joblib.load('classifiers/kmeans.pkl') 
         
-        # Load random forest
-        clf = joblib.load('classifiers/randomforest.pkl') 
+    # Load random forest
+    clf = joblib.load('classifiers/randomforest.pkl') 
+
+
+    if args.mode == 0:
         
         # Initialize camera
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(1)
 
         xs = []
         ys = []
@@ -126,6 +138,7 @@ def show_graphs(v):
 
             # Capture frame-by-frame
             ret, pic = cap.read()
+            pic = cv2.cvtColor(pic, cv2.COLOR_BGR2GRAY)
 
             # Get texton histogram of picture
             histogram = img_to_texton_histogram(pic,
@@ -152,7 +165,7 @@ def show_graphs(v):
                                 pad=0.0,
                                 frameon=False)
 
-            if i == 0:
+            if i == args.start_pic:
                 histo_bar = ax_opti.bar(np.arange(len(histogram)), histogram)
                 img_artist = ax_inflight.imshow(pic)
             else:
@@ -164,44 +177,97 @@ def show_graphs(v):
     
             drone_artist = ax.add_artist(ab)
 
-            plt.pause(.1)
+            plt.pause(.01)
             
             i += 1
         
-    else:
-        for i in range(start_pic, len(xs)):
+    elif args.mode == 1 or args.mode == 2:
+
+        test_on_the_fly = True
+        if test_on_the_fly:
+            xs = []
+            ys = []
+
+        for i in range(args.start_pic, args.start_pic + args.num_pictures):
 
             while v.value != 0:
                 pass
 
-            img_path = path + str(i) + ".jpg"
+            if args.mode == 1:
+                img_path = path + str(i) + ".png"
+            else:
+                img_path = path + str(i) + ".jpg"
 
-            xy = (xs[i], ys[i])
+            pic = cv2.imread(img_path, 0)
 
-            if i != start_pic:
+            # Get texton histogram of picture
+            histogram = img_to_texton_histogram(pic,
+                                                kmeans,
+                                                500,
+                                                100,
+                                                1)
+
+            # Predict coordinates using supervised learning
+            print(histogram)
+            pred = clf.predict([histogram])
+
+            print("Ground truth (x, y)", xs_opti[i], ys_opti[i])
+            print("Prediction (x, y)", pred[0][0], pred[0][1])
+
+            if test_on_the_fly:
+                xy = (pred[0][0], pred[0][1])
+            else:
+                xy = (xs[i], ys[i])
+
+            if i != args.start_pic:
                 drone_artist.remove()
             ab = AnnotationBbox(imagebox, xy,
             xycoords='data',
             pad=0.0,
             frameon=False)
 
-            # Update predictions graph
-            line.set_xdata(xs[max(start_pic, i - 13):i]) 
-            line.set_ydata(ys[max(start_pic, i - 13):i])
 
-            # Update optitrack graph
-            line_opti.set_xdata(xs_opti[max(start_pic, i - 25):i])  # update the data
-            line_opti.set_ydata(ys_opti[max(start_pic, i - 25):i])
+            print("Image path", img_path)
+ 
+            if test_on_the_fly:
+                pass
+            else:
+                # Update predictions graph
+                line.set_xdata(xs[max(args.start_pic, i - 13):i + 1]) 
+                line.set_ydata(ys[max(args.start_pic, i - 13):i + 1])
 
-            pic = mpimg.imread(img_path)
-            if i == start_pic:
+                # Update optitrack graph
+                print(xs[max(args.start_pic, i - 25):i])
+
+#                line_opti.set_xdata(xs_opti[i])  # update the data
+#                line_opti.set_ydata(ys_opti[i])
+                #line_opti.set_array([xs_opti[i], ys_opti[i]])  # update the data
+
+            if args.mode == 2:
+                line_opti.set_xdata(xs_opti[i])  # update the data
+                line_opti.set_ydata(ys_opti[i])
+
+
+
+            if i == args.start_pic:
                 img_artist = ax_inflight.imshow(pic)
             else:
                 img_artist.set_data(pic)
 
+            if args.mode == 1:
+                if i == args.start_pic:
+                    histo_bar = ax_opti.bar(np.arange(len(histogram)), histogram)
+                else:
+                    for rect, h in zip(histo_bar, histogram):
+                        rect.set_height(h)
+
+
             drone_artist = ax.add_artist(ab)
 
-            plt.pause(.1)
+            plt.pause(.8)
+
+    else:
+        print("Unknown mode; Please specify a mode (0, 1, 2)")
 
 
 if __name__ == "__main__":

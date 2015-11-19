@@ -19,7 +19,6 @@ import time
 import sys
 import math
 from scipy import stats
-#import emd
 from math import log, sqrt
 from scipy import spatial
 import glob
@@ -27,6 +26,37 @@ import os
 import argparse
 from sklearn.externals import joblib
 
+#parser = argparse.ArgumentParser()
+#parser.add_argument("-nd", "--num_draug_pics", type=int, help="The amount of draug pictures to use", default=950)
+#parser.add_argument("-nv", "--num_valid_pics", type=int, help="The amount of valid pictures to use", default=49)
+#parser.add_argument("-sv", "--start_valid", type=int, help="Filenumber of the first valid picture", default=950)
+#parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=500)
+#parser.add_argument("-d", "--dir", default="/home/pold/Documents/draug/", help="Path to draug directory")
+#parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/datasets/mat/", help="Path to test images")
+#parser.add_argument("-s", "--start_pic_num", type=int, default=20, help="Discard the first pictures (offset)")
+#parser.add_argument("-g", "--show_graphs", help="Show graphs of textons", action="store_true")
+#parser.add_argument("-ttr", "--test_on_trainset", help="Test on trainset (calculate training error)", action="store_false")
+#parser.add_argument("-tte", "--test_on_testset", help="Test on testset (calculate error)", action="store_false")
+#parser.add_argument("-tv", "--test_on_validset", help="Test on validset (calculate valid error)", action="store_false")
+#parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=100)
+#parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=500)
+#parser.add_argument("-o", "--use_optitrack", help="Use optitrack", action="store_true")
+#parser.add_argument("-c", "--clustering", default=False, help="Do clustering or load clusters from file", action="store_true")
+#args = parser.parse_args()
+#
+## Settings
+#base_dir = args.dir
+#genimgs_path = base_dir + "genimgs/"
+#testimgs_path = args.test_imgs_path
+#coordinates = pd.read_csv(base_dir + "targets.csv")
+#num_draug_pics = args.num_draug_pics # Number of pictures to include from draug
+#num_test_pics = args.num_test_pics # Number of pictures to test
+#test_on_trainset = args.test_on_trainset # Calculate error on trainset
+#test_on_testset = args.test_on_testset # Calculate predictons on testset (real world data)
+#test_on_validset = args.test_on_validset # Calculate predictons on testset (real world data)
+#use_optitrack = args.use_optitrack # Calculate errors on testset using Optitrack (real world data)
+#SHOW_GRAPHS = args.show_graphs
+#
 
 def xlog(xi, yi):
     if xi == 0 or yi == 0:
@@ -224,13 +254,18 @@ def train_classifier_draug(path,
     # Extract patches of the training image
     training_textons = extract_textons_from_path(path, max_textons)        
 
-    # Apply k-Means on the training image
-    classifier, training_clusters, centers = train_and_cluster_textons(textons=training_textons, 
-                                                                       n_clusters=n_clusters)
+    if args.clustering:
+        # Apply k-Means on the training image
+        classifier, training_clusters, centers = train_and_cluster_textons(textons=training_textons, 
+                                                                           n_clusters=n_clusters)
+        joblib.dump(classifier, 'classifiers/kmeans.pkl') 
+
+    else:
+
+        # Load classifier from file
+        classifier = joblib.load('classifiers/kmeans.pkl') 
 
 
-    joblib.dump(classifier, 'classifiers/kmeans.pkl') 
-    
     histograms = []
 
     y_top_left = []
@@ -316,33 +351,6 @@ def create_random_patch(img,
 
 def main_draug():
 
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-n", "--num_draug_pics", type=int, help="The amount of draug pictures to use", default=950)
-    parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=500)
-    parser.add_argument("-d", "--dir", default="/home/pold/Documents/draug/", help="Path to draug directory")
-    parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/datasets/mat/", help="Path to test images")
-    parser.add_argument("-s", "--start_pic_num", type=int, default=20, help="Discard the first pictures (offset)")
-    parser.add_argument("-g", "--show_graphs", help="Show graphs of textons", action="store_true")
-    parser.add_argument("-ttr", "--test_on_trainset", help="Test on trainset (calculate training error)", action="store_false")
-    parser.add_argument("-tte", "--test_on_testset", help="Test on testset (calculate error)", action="store_false")
-    parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=100)
-    parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=500)
-    parser.add_argument("-o", "--use_optitrack", help="Use optitrack", action="store_true")
-    args = parser.parse_args()
-
-    # Settings
-    base_dir = args.dir
-    genimgs_path = base_dir + "genimgs/"
-    testimgs_path = args.test_imgs_path
-    coordinates = pd.read_csv(base_dir + "targets.csv")
-    num_draug_pics = args.num_draug_pics # Number of pictures to include from draug
-    num_test_pics = args.num_test_pics # Number of pictures to test
-    test_on_trainset = args.test_on_trainset # Calculate error on trainset
-    test_on_testset = args.test_on_testset # Calculate predictons on testset (real world data)
-    use_optitrack = args.use_optitrack # Calculate errors on testset using Optitrack (real world data)
-    SHOW_GRAPHS = args.show_graphs
-
     # Idea: For an input image, calculate the histogram of clusters, i.e.
     # how often does each texton from the dictionary (i.e. the example
     # textons or texton cluster centers) occur.
@@ -402,6 +410,40 @@ def main_draug():
         print("Mean error x", np.mean(errors_x))
         print("Mean error y", np.mean(errors_y))
 
+    if test_on_validset:
+
+        errors_x = []
+        errors_y = []
+        
+        for i in range(args.start_valid, args.start_valid + args.num_valid_pics):
+
+            query_file = genimgs_path + str(i) + ".png"
+            query_image = cv2.imread(query_file, 0)
+
+            # previously: histograms[patch]
+            histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights)
+
+            top_left_x = coordinates.ix[i, "x"]
+            top_left_y = coordinates.ix[i, "y"]
+            
+            pred_top_left = rf_top_left.predict([histogram])
+            print "pred is", pred_top_left
+            print "real values", (top_left_x, top_left_y)
+
+            diff_x = abs(pred_top_left[0][0] - top_left_x)
+            diff_y = abs(pred_top_left[0][1] - top_left_y)
+            
+            print "diff x", diff_x
+            print "diff y", diff_y
+
+            errors_x.append(diff_x)
+            errors_y.append(diff_y)
+
+        print("Mean error x (valid)", np.mean(errors_x))
+        print("Mean error y (valid)", np.mean(errors_y))
+
+
+
     if test_on_testset:
 
         predictions = []
@@ -432,5 +474,5 @@ def main_draug():
                 
 if __name__ == "__main__":
 
-        main_draug()
+    main_draug()
 
