@@ -25,5 +25,5 @@ The code needs quite some refactoring, since it still includes a lot of
 experimental stuff.
 
 ## Visualization
-![Visualization](https://github.com/tudelft/treXton/treXton.png)
+![Visualization](https://raw.githubusercontent.com/tudelft/treXton/master/treXton.png?token=AF5G9q4BgIlbmX5Y-uk2S6HSu_jQf0H3ks5WVxb5wA%3D%3D)
 
