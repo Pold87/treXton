@@ -27,10 +27,10 @@ import argparse
 from sklearn.externals import joblib
 
 #parser = argparse.ArgumentParser()
-#parser.add_argument("-nd", "--num_draug_pics", type=int, help="The amount of draug pictures to use", default=950)
+#parser.add_argument("-nd", "--num_draug_pics", type=int, help="The amount of draug pictures to use", default=650)
 #parser.add_argument("-nv", "--num_valid_pics", type=int, help="The amount of valid pictures to use", default=49)
-#parser.add_argument("-sv", "--start_valid", type=int, help="Filenumber of the first valid picture", default=950)
-#parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=500)
+#parser.add_argument("-sv", "--start_valid", type=int, help="Filenumber of the first valid picture", default=65150)
+#parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=4000)
 #parser.add_argument("-d", "--dir", default="/home/pold/Documents/draug/", help="Path to draug directory")
 #parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/datasets/mat/", help="Path to test images")
 #parser.add_argument("-s", "--start_pic_num", type=int, default=20, help="Discard the first pictures (offset)")

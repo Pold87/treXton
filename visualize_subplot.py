@@ -24,13 +24,13 @@ import seaborn as sns
 sns.set(style='ticks', palette='Set1')
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/datasets/mat/", help="Path to test images")
+parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/draug/genimgs/", help="Path to test images")
 parser.add_argument("-m", "--mymap", default="../draug/img/bestnewmat.png", help="Path to the mat image")
 parser.add_argument("-p", "--predictions", default="predictions.npy", help="Path to the predictions of extract_textons_draug.py")
 parser.add_argument("-c", "--camera", default=False, help="Use camera for testing", action="store_true")
-parser.add_argument("-mo", "--mode", default=0, help="Use the camera (0), test on train pictures (1), test on test pictures (3)", type=int)
+parser.add_argument("-mo", "--mode", default=0, help="Use the camera (0), test on train pictures (1), test on test pictures (2)", type=int)
 parser.add_argument("-s", "--start_pic", default=950, help="Starting picture (offset)", type=int)
-parser.add_argument("-n", "--num_pictures", default=49, help="Amount of pictures for testing", type=int)
+parser.add_argument("-n", "--num_pictures", default=500, help="Amount of pictures for testing", type=int)
 
 args = parser.parse_args()
 
@@ -74,7 +74,7 @@ def show_graphs(v):
     # First set up the figure, the axis, and the plot element we want to animate
     ax = plt.subplot2grid((2,2), (0, 0))
     ax.set_xlim([0, x_width])
-    ax.set_ylim([-y_width / 2, y_width / 2])
+    ax.set_ylim([0, y_width])
 
     line, = ax.plot([], [], lw=2)
 
@@ -85,7 +85,7 @@ def show_graphs(v):
 
     minidrone = read_png("img/minidrone.png")
     imagebox = OffsetImage(minidrone, zoom=1)
-    ax.imshow(background_map, zorder=0, extent=[0, x_width, -y_width / 2, y_width / 2])
+    ax.imshow(background_map, zorder=0, extent=[0, x_width, 0, y_width])
 
 
     if args.mode == 0:
@@ -128,7 +128,7 @@ def show_graphs(v):
     if args.mode == 0:
         
         # Initialize camera
-        cap = cv2.VideoCapture(1)
+        cap = cv2.VideoCapture(0)
 
         xs = []
         ys = []
@@ -165,7 +165,7 @@ def show_graphs(v):
                                 pad=0.0,
                                 frameon=False)
 
-            if i == args.start_pic:
+            if i == 0:
                 histo_bar = ax_opti.bar(np.arange(len(histogram)), histogram)
                 img_artist = ax_inflight.imshow(pic)
             else:
@@ -193,10 +193,12 @@ def show_graphs(v):
             while v.value != 0:
                 pass
 
-            if args.mode == 1:
-                img_path = path + str(i) + ".png"
-            else:
-                img_path = path + str(i) + ".jpg"
+#            if args.mode == 1:
+            img_path = path + str(i) + ".png"
+ #           else:
+                
+
+#              img_path = path + str(i) + ".jpg"
 
             pic = cv2.imread(img_path, 0)
 
@@ -247,14 +249,12 @@ def show_graphs(v):
                 line_opti.set_xdata(xs_opti[i])  # update the data
                 line_opti.set_ydata(ys_opti[i])
 
-
-
             if i == args.start_pic:
                 img_artist = ax_inflight.imshow(pic)
             else:
                 img_artist.set_data(pic)
 
-            if args.mode == 1:
+            if args.mode == 1 or args.mode == 2:
                 if i == args.start_pic:
                     histo_bar = ax_opti.bar(np.arange(len(histogram)), histogram)
                 else:
