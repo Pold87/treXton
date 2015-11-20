@@ -17,20 +17,24 @@ from sklearn.externals import joblib
 import thread
 import time
 import threading
-from extract_textons_draug import img_to_texton_histogram
+from treXton import img_to_texton_histogram
 
 import seaborn as sns
 
 sns.set(style='ticks', palette='Set1')
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/draug/genimgs/", help="Path to test images")
+parser.add_argument("-tp", "--test_imgs_path", default="/home/pold87/Documents/Internship/draug/genimgs/", help="Path to test images")
 parser.add_argument("-m", "--mymap", default="../draug/img/bestnewmat.png", help="Path to the mat image")
 parser.add_argument("-p", "--predictions", default="predictions.npy", help="Path to the predictions of extract_textons_draug.py")
 parser.add_argument("-c", "--camera", default=False, help="Use camera for testing", action="store_true")
 parser.add_argument("-mo", "--mode", default=0, help="Use the camera (0), test on train pictures (1), test on test pictures (2)", type=int)
 parser.add_argument("-s", "--start_pic", default=950, help="Starting picture (offset)", type=int)
 parser.add_argument("-n", "--num_pictures", default=500, help="Amount of pictures for testing", type=int)
+parser.add_argument("-ts", "--texton_size", help="Size of the textons", type=int, default=5)
+parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=100)
+parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=500)
+
 
 args = parser.parse_args()
 
@@ -124,6 +128,9 @@ def show_graphs(v):
     # Load random forest
     clf = joblib.load('classifiers/randomforest.pkl') 
 
+    # Load tfidf
+    tfidf = joblib.load('classifiers/tfidf.pkl') 
+
 
     if args.mode == 0:
         
@@ -143,9 +150,13 @@ def show_graphs(v):
             # Get texton histogram of picture
             histogram = img_to_texton_histogram(pic,
                                                 kmeans,
-                                                500,
-                                                100,
-                                                1)
+                                                args.max_textons,
+                                                args.num_textons,
+                                                1,
+                                                args)
+
+            histogram = tfidf.transform([histogram]).todense()
+            histogram = histogram[0]
 
             # Predict coordinates using supervised learning
             pred = clf.predict([histogram])
@@ -188,26 +199,32 @@ def show_graphs(v):
             xs = []
             ys = []
 
-        for i in range(args.start_pic, args.start_pic + args.num_pictures):
+        for i in range(args.start_pic, args.start_pic + args.num_pictures, 2):
 
             while v.value != 0:
                 pass
 
 #            if args.mode == 1:
-            img_path = path + str(i) + ".png"
+#            img_path = path + str(i) + ".png"
  #           else:
                 
 
-#              img_path = path + str(i) + ".jpg"
+            img_path = path + str(i) + ".png"
 
             pic = cv2.imread(img_path, 0)
 
             # Get texton histogram of picture
             histogram = img_to_texton_histogram(pic,
                                                 kmeans,
-                                                500,
-                                                100,
-                                                1)
+                                                args.max_textons,
+                                                args.num_textons,
+                                                1,
+                                                args)
+
+            histogram = tfidf.transform([histogram]).todense()
+            print(histogram.shape)
+
+            histogram = np.ravel(histogram)
 
             # Predict coordinates using supervised learning
             print(histogram)
