@@ -29,6 +29,7 @@ from sklearn.externals import joblib
 from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn import svm
 import xgboost as xgb
+import configargparse
 
 tfidf = TfidfTransformer()
 
@@ -113,8 +114,8 @@ def extract_textons_from_path(path, max_textons=100):
     img_vars = []
 
     start = 70
-    stop = 500
-    step = 6
+    stop = 300
+    step = 4
 
     for pic_num in range(start, stop, step):
 #    for pic_num in range(num_draug_pics):
@@ -283,9 +284,12 @@ def train_classifier_draug(path,
 
     # Settings
     base_dir = args.dir
-    genimgs_path = base_dir + "genimgs/"
+    #genimgs_path = base_dir + "genimgs/"
+    genimgs_path = base_dir
     testimgs_path = args.test_imgs_path
-    coordinates = pd.read_csv(base_dir + "targets.csv")
+    #coordinates = pd.read_csv(base_dir + "targets_gtl.csv")
+    coordinates_gtl = pd.read_csv("/home/pold87/Documents/Internship/treXton/target_gtl.csv")
+    coordinates_draug = pd.read_csv("/home/pold87/Documents/Internship/draug/targets.csv")
 
     # Extract patches of the training image
     training_textons = extract_textons_from_path(path, max_textons)        
@@ -315,7 +319,7 @@ def train_classifier_draug(path,
 
 
     arguments = {'max_depth': 30,
-                 'learning_rate': 0.001,
+                 'learning_rate': 0.01,
                  'n_estimators':1200,
                  'subsample': 0.85,
                  'min_child_weight': 6,
@@ -325,16 +329,16 @@ def train_classifier_draug(path,
                  'silent': True}
     
     if args.do_separate:
-        #clf_x_coord = xgb.XGBRegressor(**arguments)
-        #clf_y_coord = xgb.XGBRegressor(**arguments)
-        clf_x_coord = svm.LinearSVR(epsilon=0)
-        clf_y_coord = svm.LinearSVR(epsilon=0)
+        clf_x_coord = xgb.XGBRegressor(**arguments)
+        clf_y_coord = xgb.XGBRegressor(**arguments)
+        #clf_x_coord = svm.LinearSVR(epsilon=0)
+        #clf_y_coord = svm.LinearSVR(epsilon=0)
         #clf_x_coord = RandomForestRegressor(500, n_jobs=-1)
         #clf_y_coord = RandomForestRegressor(500, n_jobs=-1)
         
     
     else:
-        clf0 = svm.SVR()
+        clf0 = RandomForestRegressor(1000, n_jobs=-1)
         #clf0 = KNeighborsRegressor(weights='uniform', n_neighbors=7, p=3)
         clf1 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=9)
         clfs = [clf0, clf1]
@@ -346,9 +350,13 @@ def train_classifier_draug(path,
 
     mean, stdv = np.load("mean_stdv.npy")
 
-    for i in range(args.num_draug_pics):
+    picturenumbers = np.random.randint(20, 300, 100)
+
+    for i in picturenumbers:
 
         genimg = genimgs_path + str(i) + ".png"
+
+        print("Genimg is", genimg)
         
         query_image = cv2.imread(genimg, 0)
 
@@ -358,15 +366,46 @@ def train_classifier_draug(path,
 
         #cv2.imwrite(str(i) + "_normalized.png", query_image)
         
-        top_left_x = coordinates.ix[i, "x"]
-        top_left_y = coordinates.ix[i, "y"]
-
+        top_left_x = coordinates_gtl.ix[i, "x"]
+        top_left_y = coordinates_gtl.ix[i, "y"]
+        
         if args.do_separate:
             y_top_left.append(top_left_x)
             y_bottom_right.append(top_left_y)
         else:
             y_top_left.append((top_left_x, top_left_y))
 
+            
+        query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
+            
+        histograms.append(query_histogram)
+
+    # Get histograms and targets from draug
+    for i in range(0, 4800, 1):
+
+        mydraugpath = "/home/pold87/Documents/Internship/draug/genimgs/"
+        genimg = mydraugpath + str(i) + ".png"
+
+        print("Genimg is", genimg)
+        
+        query_image = cv2.imread(genimg, 0)
+
+        if args.standardize:
+            query_image = query_image - mean
+            query_image = query_image / stdv
+
+        #cv2.imwrite(str(i) + "_normalized.png", query_image)
+        
+        top_left_x = coordinates_draug.ix[i, "x"]
+        top_left_y = coordinates_draug.ix[i, "y"]
+        
+        if args.do_separate:
+            y_top_left.append(top_left_x)
+            y_bottom_right.append(top_left_y)
+        else:
+            y_top_left.append((top_left_x, top_left_y))
+
+            
         query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
             
         histograms.append(query_histogram)
@@ -412,7 +451,8 @@ def main_draug(args):
     base_dir = args.dir
     genimgs_path = base_dir + "genimgs/"
     testimgs_path = args.test_imgs_path
-    coordinates = pd.read_csv(base_dir + "targets.csv")
+#    coordinates = pd.read_csv(base_dir + "targets.csv")
+    coordinates = pd.read_csv("/home/pold87/Documents/Internship/treXton/target_gtl.csv")
 
     # Idea: For an input image, calculate the histogram of clusters, i.e.
     # how often does each texton from the dictionary (i.e. the example
@@ -431,7 +471,7 @@ def main_draug(args):
     max_textons = args.max_textons
     n_clusters = args.num_textons
     
-    path = "/home/pold/Documents/datasets/mat/"
+    path = "/home/pold87/Documents/Internship/datasets/mat/"
 
     rf_top_left,  histograms, y_top_left, classifier, weights = train_classifier_draug(
         path=path,
@@ -537,21 +577,21 @@ def main_draug(args):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-nd", "--num_draug_pics", type=int, help="The amount of draug pictures to use", default=1700)
+    parser.add_argument("-nd", "--num_draug_pics", type=int, help="The amount of draug pictures to use", default=300)
     parser.add_argument("-nv", "--num_valid_pics", type=int, help="The amount of valid pictures to use", default=49)
     parser.add_argument("-sv", "--start_valid", type=int, help="Filenumber of the first valid picture", default=950)
     parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=40)
-    parser.add_argument("-d", "--dir", default="/home/pold/Documents/draug/", help="Path to draug directory")
-    parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/datasets/mat/", help="Path to test images")
+    parser.add_argument("-d", "--dir", default="/home/pold87/Documents/Internship/datasets/mat/", help="Path to draug directory")
+    parser.add_argument("-tp", "--test_imgs_path", default="/home/pold87/Documents/datasets/mat/", help="Path to test images")
     parser.add_argument("-s", "--start_pic_num", type=int, default=20, help="Discard the first pictures (offset)")
     parser.add_argument("-g", "--show_graphs", help="Show graphs of textons", action="store_true")
     parser.add_argument("-ttr", "--test_on_trainset", help="Test on trainset (calculate training error)", action="store_false")
     parser.add_argument("-tte", "--test_on_testset", help="Test on testset (calculate error)", action="store_false")
     parser.add_argument("-tv", "--test_on_validset", help="Test on validset (calculate valid error)", action="store_false")
-    parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=100)
-    parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=500)
+    parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=45)
+    parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=1000)
     parser.add_argument("-o", "--use_optitrack", help="Use optitrack", action="store_true")
-    parser.add_argument("-ts", "--texton_size", help="Size of the textons", type=int, default=7)
+    parser.add_argument("-ts", "--texton_size", help="Size of the textons", type=int, default=5)
     parser.add_argument("-c", "--clustering", default=False, help="Do clustering or load clusters from file", action="store_true")
     parser.add_argument("-tfidf", "--tfidf", default=True, help="Perform tfidf", action="store_false")
     parser.add_argument("-std", "--standardize", default=True, help="Perform standarization", action="store_false")

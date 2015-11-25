@@ -21,26 +21,29 @@ import thread
 import time
 import threading
 from treXton import img_to_texton_histogram
+import relocalize
 
 import seaborn as sns
 
 sns.set(style='ticks', palette='Set1')
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-tp", "--test_imgs_path", default="/home/pold/Documents/datasets/mat/", help="Path to test images")
+parser.add_argument("-tp", "--test_imgs_path", default="/home/pold87/Documents/Internship/datasets/mat/", help="Path to test images")
 parser.add_argument("-m", "--mymap", default="../draug/img/bestnewmat.png", help="Path to the mat image")
 parser.add_argument("-p", "--predictions", default="predictions.npy", help="Path to the predictions of extract_textons_draug.py")
 parser.add_argument("-c", "--camera", default=False, help="Use camera for testing", action="store_true")
 parser.add_argument("-mo", "--mode", default=0, help="Use the camera (0), test on train pictures (1), test on test pictures (2)", type=int)
 parser.add_argument("-s", "--start_pic", default=950, help="Starting picture (offset)", type=int)
 parser.add_argument("-n", "--num_pictures", default=500, help="Amount of pictures for testing", type=int)
-parser.add_argument("-ts", "--texton_size", help="Size of the textons", type=int, default=7)
-parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=100)
-parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=500)
+parser.add_argument("-ts", "--texton_size", help="Size of the textons", type=int, default=5)
+parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=45)
+parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=1000)
 parser.add_argument("-tfidf", "--tfidf", default=True, help="Perform tfidf", action="store_false")
 parser.add_argument("-std", "--standardize", default=True, help="Perform standarization", action="store_false")
 parser.add_argument("-ds", "--do_separate", default=True, help="Use two classifiers (x and y)", action="store_false")
 parser.add_argument("-f", "--filter", default=True, help="Use Kalman filter for filtering", action="store_false")
+parser.add_argument("-us", "--use_sift", default=True, help="Use SIFT from OpenCV to display its estimation", action="store_false")
+parser.add_argument("-ug", "--use_ground_truth", default=False, help="Use SIFT from OpenCV to display its estimation", action="store_true")
 args = parser.parse_args()
 
 mymap = args.mymap
@@ -120,6 +123,7 @@ def show_graphs(v, f):
     minidrone_f = read_png("img/minidrone_f.png")
     imagebox = OffsetImage(minidrone, zoom=1)
     filter_imagebox = OffsetImage(minidrone_f, zoom=0.7)
+    sift_imagebox = OffsetImage(minidrone_f, zoom=0.7)
     ax.imshow(background_map, zorder=0, extent=[0, x_width, 0, y_width])
 
 
@@ -172,7 +176,7 @@ def show_graphs(v, f):
     if args.mode == 0:
         
         # Initialize camera
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(1)
 
         xs = []
         ys = []
@@ -180,6 +184,10 @@ def show_graphs(v, f):
         i = 0
 
         mean, stdv = np.load("mean_stdv.npy")
+
+        if args.filter:
+            my_filter = init_tracker()
+
         
         while True:
 
@@ -199,17 +207,47 @@ def show_graphs(v, f):
                                                 1,
                                                 args)
 
-            histogram = tfidf.transform([histogram]).todense()
-            histogram = histogram[0]
+            if args.tfidf:
+                histogram = tfidf.transform([histogram]).todense()
 
-            # Predict coordinates using supervised learning
-            pred = clf.predict([histogram])
-            x = pred[0][0]
-            y = pred[0][1]
-            xs.append(x)
-            ys.append(y)
+            histogram = np.ravel(histogram)
+
+
+            preds = []
+            if args.do_separate:
+                pred_x = clf_x.predict([histogram])
+                pred_y = clf_y.predict([histogram])
+                #print("pred x is", pred_x)
+                #print("classifier is", clf_x)
+            else:
+                for clf in clfs:
+                    pred = clf.predict([histogram])
+                    #print "Pred is",  pred
+                    preds.append(pred)
+
+                pred = np.mean(preds, axis=0)
+                #print "Averaged pred is", pred
             
-            xy = (x, y)
+            if args.filter:
+                my_filter.update(pred.T)
+                filtered_pred = (my_filter.x[0][0], my_filter.x[2][0])
+                my_filter.predict()
+
+                filtered_ab = AnnotationBbox(filter_imagebox, filtered_pred,
+                                             xycoords='data',
+                                             pad=0.0,
+                                             frameon=False)
+
+
+
+
+            if args.do_separate:
+                xy = (pred_x[0], pred_y[0])
+            else:
+                xy = (pred[0][0], pred[0][1])
+
+
+            print("xy is", xy)
 
             # Update predictions graph
             line.set_xdata(xs[max(0, i - 13):i]) 
@@ -255,6 +293,10 @@ def show_graphs(v, f):
         errors_x = []
         errors_y = []
 
+        # Use SIFT relocalizer from OpenCV/C++
+        rel = relocalize.Relocalizer(args.mymap)
+
+
         for i in range(args.start_pic, args.start_pic + args.num_pictures, 1):
 
             while v.value != 0:
@@ -270,18 +312,13 @@ def show_graphs(v, f):
 
 #            img_path = path + str(1090) + ".png"
 #            img_path = "/home/pold/Documents/draug/genimgs/70.png"
-            print(img_path)
             pic = cv2.imread(img_path, 0)
-
 
             if args.standardize:
                 pic = pic - mean
                 pic = pic / stdv
 
 
-            print(pic[0:30])
-
-            
             # Get texton histogram of picture
             histogram = img_to_texton_histogram(pic,
                                                 kmeans,
@@ -292,10 +329,7 @@ def show_graphs(v, f):
 
             if args.tfidf:
                 histogram = tfidf.transform([histogram]).todense()
-            print(histogram.shape)
 
-            # print("HISTO FUCKING IS", histogram)
-            
             histogram = np.ravel(histogram)
 
             # Predict coordinates using supervised learning
@@ -304,23 +338,40 @@ def show_graphs(v, f):
             if args.do_separate:
                 pred_x = clf_x.predict([histogram])
                 pred_y = clf_y.predict([histogram])
+                #print("pred x is", pred_x)
+                #print("classifier is", clf_x)
             else:
                 for clf in clfs:
                     pred = clf.predict([histogram])
-                    print pred
+                    #print "Pred is",  pred
                     preds.append(pred)
 
-            pred = np.mean(preds, axis=0)
-            print pred
+                pred = np.mean(preds, axis=0)
+                #print "Averaged pred is", pred
+
+            if args.use_sift:
+                sift_loc = rel.calcLocationFromPath(img_path)
+                sift_loc[1] = y_width - sift_loc[1]
+                #print(sift_loc)
+                sift_xy = tuple(sift_loc)
+
+                sift_ab = AnnotationBbox(sift_imagebox, sift_xy,
+                                         xycoords='data',
+                                         pad=0.0,
+                                         frameon=False)
+
+                
 
             if args.filter:
                 my_filter.update(pred.T)
                 filtered_pred = (my_filter.x[0][0], my_filter.x[2][0])
                 my_filter.predict()
 
+                filtered_ab = AnnotationBbox(filter_imagebox, filtered_pred,
+                                             xycoords='data',
+                                             pad=0.0,
+                                             frameon=False)
 
-            #print("Ground truth (x, y)", xs_opti[i], ys_opti[i])
-            #print("Prediction (x, y)", pred[0][0], pred[0][1])
 
             if test_on_the_fly:
                 if args.do_separate:
@@ -331,31 +382,28 @@ def show_graphs(v, f):
             else:
                 xy = (xs[i], ys[i])
 
-
-            ground_truth =  (labels.x[i], labels.y[i])
-            diff =  np.subtract(ground_truth, xy)
-            abs_diff = np.fabs(diff)
-            errors_x.append(abs_diff[0])
-            errors_y.append(abs_diff[1])
-            error = np.linalg.norm(abs_diff)
-            errors.append(error)
+            
+            if args.use_ground_truth:
+                ground_truth =  (labels.x[i], labels.y[i])
+                diff =  np.subtract(ground_truth, xy)
+                abs_diff = np.fabs(diff)
+                errors_x.append(abs_diff[0])
+                errors_y.append(abs_diff[1])
+                error = np.linalg.norm(abs_diff)
+                errors.append(error)
                 
             if i != args.start_pic:
+                
                 drone_artist.remove()
-                filtered_drone_artist.remove()
+                
+                if args.filter: filtered_drone_artist.remove()
+                if args.use_sift: sift_drone_artist.remove()
                 
             ab = AnnotationBbox(imagebox, xy,
             xycoords='data',
             pad=0.0,
             frameon=False)
 
-            filtered_ab = AnnotationBbox(filter_imagebox, filtered_pred,
-                    xycoords='data',
-                    pad=0.0,
-                    frameon=False)
-
-            print("Image path", img_path)
- 
             if test_on_the_fly:
                 pass
             else:
@@ -388,7 +436,8 @@ def show_graphs(v, f):
 
 
             drone_artist = ax.add_artist(ab)
-            filtered_drone_artist = ax.add_artist(filtered_ab)
+            if args.filter: filtered_drone_artist = ax.add_artist(filtered_ab)
+            if args.use_sift: sift_drone_artist = ax.add_artist(sift_ab)
 
             plt.pause(.8)
 
@@ -396,10 +445,11 @@ def show_graphs(v, f):
                 f = 1
                 break
 
-    
-        print("errors", np.mean(errors))
-        print("errors x", np.mean(errors_x))
-        print("errors y", np.mean(errors_y))
+                
+        if args.use_ground_truth:
+            print("errors", np.mean(errors))
+            print("errors x", np.mean(errors_x))
+            print("errors y", np.mean(errors_y))
     else:
         print("Unknown mode; Please specify a mode (0, 1, 2)")
 
