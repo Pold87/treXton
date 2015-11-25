@@ -288,8 +288,8 @@ def train_classifier_draug(path,
     genimgs_path = base_dir
     testimgs_path = args.test_imgs_path
     #coordinates = pd.read_csv(base_dir + "targets_gtl.csv")
-    coordinates_gtl = pd.read_csv("/home/pold87/Documents/Internship/treXton/target_gtl.csv")
-    coordinates_draug = pd.read_csv("/home/pold87/Documents/Internship/draug/targets.csv")
+    coordinates_gtl = pd.read_csv("target_gtl.csv")
+    coordinates_draug = pd.read_csv("../draug/targets.csv")
 
     # Extract patches of the training image
     training_textons = extract_textons_from_path(path, max_textons)        
@@ -356,7 +356,7 @@ def train_classifier_draug(path,
 
         genimg = genimgs_path + str(i) + ".png"
 
-        print("Genimg is", genimg)
+        #print("Genimg is", genimg)
         
         query_image = cv2.imread(genimg, 0)
 
@@ -383,10 +383,10 @@ def train_classifier_draug(path,
     # Get histograms and targets from draug
     for i in range(0, 4800, 1):
 
-        mydraugpath = "/home/pold87/Documents/Internship/draug/genimgs/"
+        mydraugpath = "../draug/genimgs/"
         genimg = mydraugpath + str(i) + ".png"
 
-        print("Genimg is", genimg)
+        #print("Genimg is", genimg)
         
         query_image = cv2.imread(genimg, 0)
 
@@ -452,7 +452,7 @@ def main_draug(args):
     genimgs_path = base_dir + "genimgs/"
     testimgs_path = args.test_imgs_path
 #    coordinates = pd.read_csv(base_dir + "targets.csv")
-    coordinates = pd.read_csv("/home/pold87/Documents/Internship/treXton/target_gtl.csv")
+    coordinates = pd.read_csv("target_gtl.csv")
 
     # Idea: For an input image, calculate the histogram of clusters, i.e.
     # how often does each texton from the dictionary (i.e. the example
@@ -471,7 +471,7 @@ def main_draug(args):
     max_textons = args.max_textons
     n_clusters = args.num_textons
     
-    path = "/home/pold87/Documents/Internship/datasets/mat/"
+    path = "../datasets/mat/"
 
     rf_top_left,  histograms, y_top_left, classifier, weights = train_classifier_draug(
         path=path,
@@ -581,14 +581,14 @@ if __name__ == "__main__":
     parser.add_argument("-nv", "--num_valid_pics", type=int, help="The amount of valid pictures to use", default=49)
     parser.add_argument("-sv", "--start_valid", type=int, help="Filenumber of the first valid picture", default=950)
     parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=40)
-    parser.add_argument("-d", "--dir", default="/home/pold87/Documents/Internship/datasets/mat/", help="Path to draug directory")
+    parser.add_argument("-d", "--dir", default="../datasets/mat/", help="Path to draug directory")
     parser.add_argument("-tp", "--test_imgs_path", default="/home/pold87/Documents/datasets/mat/", help="Path to test images")
     parser.add_argument("-s", "--start_pic_num", type=int, default=20, help="Discard the first pictures (offset)")
     parser.add_argument("-g", "--show_graphs", help="Show graphs of textons", action="store_true")
     parser.add_argument("-ttr", "--test_on_trainset", help="Test on trainset (calculate training error)", action="store_false")
     parser.add_argument("-tte", "--test_on_testset", help="Test on testset (calculate error)", action="store_false")
     parser.add_argument("-tv", "--test_on_validset", help="Test on validset (calculate valid error)", action="store_false")
-    parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=45)
+    parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=200)
     parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=1000)
     parser.add_argument("-o", "--use_optitrack", help="Use optitrack", action="store_true")
     parser.add_argument("-ts", "--texton_size", help="Size of the textons", type=int, default=5)

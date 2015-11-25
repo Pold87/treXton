@@ -36,7 +36,7 @@ parser.add_argument("-mo", "--mode", default=0, help="Use the camera (0), test o
 parser.add_argument("-s", "--start_pic", default=950, help="Starting picture (offset)", type=int)
 parser.add_argument("-n", "--num_pictures", default=500, help="Amount of pictures for testing", type=int)
 parser.add_argument("-ts", "--texton_size", help="Size of the textons", type=int, default=5)
-parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=45)
+parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=200)
 parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=1000)
 parser.add_argument("-tfidf", "--tfidf", default=True, help="Perform tfidf", action="store_false")
 parser.add_argument("-std", "--standardize", default=True, help="Perform standarization", action="store_false")
@@ -176,7 +176,7 @@ def show_graphs(v, f):
     if args.mode == 0:
         
         # Initialize camera
-        cap = cv2.VideoCapture(1)
+        cap = cv2.VideoCapture(0)
 
         xs = []
         ys = []
@@ -217,6 +217,7 @@ def show_graphs(v, f):
             if args.do_separate:
                 pred_x = clf_x.predict([histogram])
                 pred_y = clf_y.predict([histogram])
+                pred = np.array([[pred_x[0], pred_y[0]]])
                 #print("pred x is", pred_x)
                 #print("classifier is", clf_x)
             else:
@@ -228,6 +229,16 @@ def show_graphs(v, f):
                 pred = np.mean(preds, axis=0)
                 #print "Averaged pred is", pred
             
+
+            if args.do_separate:
+                xy = (pred_x[0], pred_y[0])
+            else:
+                xy = (pred[0][0], pred[0][1])
+
+
+            print("xy is", xy)
+
+
             if args.filter:
                 my_filter.update(pred.T)
                 filtered_pred = (my_filter.x[0][0], my_filter.x[2][0])
@@ -237,17 +248,7 @@ def show_graphs(v, f):
                                              xycoords='data',
                                              pad=0.0,
                                              frameon=False)
-
-
-
-
-            if args.do_separate:
-                xy = (pred_x[0], pred_y[0])
-            else:
-                xy = (pred[0][0], pred[0][1])
-
-
-            print("xy is", xy)
+            
 
             # Update predictions graph
             line.set_xdata(xs[max(0, i - 13):i]) 
@@ -302,16 +303,8 @@ def show_graphs(v, f):
             while v.value != 0:
                 pass
 
-#            if args.mode == 1:
-#            img_path = path + str(i) + ".png"
- #           else:
-
-
             img_path = path + str(i) + ".png"
 
-
-#            img_path = path + str(1090) + ".png"
-#            img_path = "/home/pold/Documents/draug/genimgs/70.png"
             pic = cv2.imread(img_path, 0)
 
             if args.standardize:
@@ -338,16 +331,13 @@ def show_graphs(v, f):
             if args.do_separate:
                 pred_x = clf_x.predict([histogram])
                 pred_y = clf_y.predict([histogram])
-                #print("pred x is", pred_x)
-                #print("classifier is", clf_x)
+                pred = np.array([[pred_x[0], pred_y[0]]])
             else:
                 for clf in clfs:
                     pred = clf.predict([histogram])
-                    #print "Pred is",  pred
                     preds.append(pred)
 
                 pred = np.mean(preds, axis=0)
-                #print "Averaged pred is", pred
 
             if args.use_sift:
                 sift_loc = rel.calcLocationFromPath(img_path)
@@ -362,6 +352,16 @@ def show_graphs(v, f):
 
                 
 
+            if test_on_the_fly:
+                if args.do_separate:
+                    xy = (pred_x[0], pred_y[0])
+                else:
+                    xy = (pred[0][0], pred[0][1])
+                
+            else:
+                xy = (xs[i], ys[i])
+
+
             if args.filter:
                 my_filter.update(pred.T)
                 filtered_pred = (my_filter.x[0][0], my_filter.x[2][0])
@@ -373,15 +373,7 @@ def show_graphs(v, f):
                                              frameon=False)
 
 
-            if test_on_the_fly:
-                if args.do_separate:
-                    xy = (pred_x[0], pred_y[0])
-                else:
-                    xy = (pred[0][0], pred[0][1])
                 
-            else:
-                xy = (xs[i], ys[i])
-
             
             if args.use_ground_truth:
                 ground_truth =  (labels.x[i], labels.y[i])
@@ -440,11 +432,6 @@ def show_graphs(v, f):
             if args.use_sift: sift_drone_artist = ax.add_artist(sift_ab)
 
             plt.pause(.8)
-
-            if i == 56:
-                f = 1
-                break
-
                 
         if args.use_ground_truth:
             print("errors", np.mean(errors))
