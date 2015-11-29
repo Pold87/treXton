@@ -28,7 +28,7 @@ import seaborn as sns
 sns.set(style='ticks', palette='Set1')
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-tp", "--test_imgs_path", default="/home/pold87/Documents/Internship/datasets/mat/", help="Path to test images")
+parser.add_argument("-tp", "--test_imgs_path", default="imgs_straight/", help="Path to test images")
 parser.add_argument("-m", "--mymap", default="../draug/img/bestnewmat.png", help="Path to the mat image")
 parser.add_argument("-p", "--predictions", default="predictions.npy", help="Path to the predictions of extract_textons_draug.py")
 parser.add_argument("-c", "--camera", default=False, help="Use camera for testing", action="store_true")
@@ -36,13 +36,14 @@ parser.add_argument("-mo", "--mode", default=0, help="Use the camera (0), test o
 parser.add_argument("-s", "--start_pic", default=950, help="Starting picture (offset)", type=int)
 parser.add_argument("-n", "--num_pictures", default=500, help="Amount of pictures for testing", type=int)
 parser.add_argument("-ts", "--texton_size", help="Size of the textons", type=int, default=5)
-parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=200)
-parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=1000)
+parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=100)
+parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=700)
 parser.add_argument("-tfidf", "--tfidf", default=True, help="Perform tfidf", action="store_false")
 parser.add_argument("-std", "--standardize", default=True, help="Perform standarization", action="store_false")
 parser.add_argument("-ds", "--do_separate", default=True, help="Use two classifiers (x and y)", action="store_false")
 parser.add_argument("-f", "--filter", default=True, help="Use Kalman filter for filtering", action="store_false")
 parser.add_argument("-us", "--use_sift", default=True, help="Use SIFT from OpenCV to display its estimation", action="store_false")
+parser.add_argument("-un", "--use_normal", default=True, help="Use normal drone to display its estimation", action="store_false")
 parser.add_argument("-ug", "--use_ground_truth", default=False, help="Use SIFT from OpenCV to display its estimation", action="store_true")
 args = parser.parse_args()
 
@@ -60,11 +61,11 @@ def init_tracker():
     tracker.H = np.array([[1, 0, 0, 0],
                           [0, 0, 1, 0]])
 
-    tracker.R = np.eye(2) * 1000
-    q = Q_discrete_white_noise(dim=2, dt=dt, var=1)
+    tracker.R = np.eye(2) * 5
+    q = Q_discrete_white_noise(dim=2, dt=dt, var=0.01)
     tracker.Q = block_diag(q, q)
-    tracker.x = np.array([[2000, 0, 700, 0]]).T
-    tracker.P = np.eye(4) * 50.
+    tracker.x = np.array([[-3, 0, 229, 0]]).T
+    tracker.P = np.eye(4) * 5.
     return tracker
 
 
@@ -121,9 +122,10 @@ def show_graphs(v, f):
 
     minidrone = read_png("img/minidrone.png")
     minidrone_f = read_png("img/minidrone_f.png")
+    minidrone_s = read_png("img/minisift.png")
     imagebox = OffsetImage(minidrone, zoom=1)
-    filter_imagebox = OffsetImage(minidrone_f, zoom=0.7)
-    sift_imagebox = OffsetImage(minidrone_f, zoom=0.7)
+    filter_imagebox = OffsetImage(minidrone_f, zoom=0.6)
+    sift_imagebox = OffsetImage(minidrone_s, zoom=0.7)
     ax.imshow(background_map, zorder=0, extent=[0, x_width, 0, y_width])
 
 
@@ -176,7 +178,7 @@ def show_graphs(v, f):
     if args.mode == 0:
         
         # Initialize camera
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(1)
 
         xs = []
         ys = []
@@ -264,12 +266,14 @@ def show_graphs(v, f):
                 img_artist = ax_inflight.imshow(pic)
             else:
                 img_artist.set_data(pic)
-                drone_artist.remove()
+                if args.use_normal: drone_artist.remove()
+                if args.filter: filtered_drone_artist.remove()
                 
                 for rect, h in zip(histo_bar, histogram):
                     rect.set_height(h)
     
-            drone_artist = ax.add_artist(ab)
+            if args.use_normal: drone_artist = ax.add_artist(ab)
+            if args.filter: filtered_drone_artist = ax.add_artist(filtered_ab)
 
             plt.pause(.01)
             
@@ -295,16 +299,21 @@ def show_graphs(v, f):
         errors_y = []
 
         # Use SIFT relocalizer from OpenCV/C++
-        rel = relocalize.Relocalizer(args.mymap)
+        if args.use_sift:
+            rel = relocalize.Relocalizer(args.mymap)
 
+        labels = pd.read_csv("handlabeled/playingmat.csv", index_col=0)
+        truth = pd.read_csv("target_gtl_same_orient.csv")
+        truth.set_index(['id'], inplace=True)
 
-        for i in range(args.start_pic, args.start_pic + args.num_pictures, 1):
+        for i in range(args.start_pic, args.start_pic + args.num_pictures, 2):
 
             while v.value != 0:
                 pass
 
             img_path = path + str(i) + ".png"
 
+            pic_c = plt.imread(img_path, 1)
             pic = cv2.imread(img_path, 0)
 
             if args.standardize:
@@ -338,18 +347,21 @@ def show_graphs(v, f):
                     preds.append(pred)
 
                 pred = np.mean(preds, axis=0)
+                
 
             if args.use_sift:
-                sift_loc = rel.calcLocationFromPath(img_path)
-                sift_loc[1] = y_width - sift_loc[1]
+                #sift_loc = rel.calcLocationFromPath(img_path)
+                #sift_loc[1] = y_width - sift_loc[1]
                 #print(sift_loc)
-                sift_xy = tuple(sift_loc)
+                #sift_xy = tuple(sift_loc)
+                sift_x = truth.ix[i, "x"]
+                sift_y = truth.ix[i, "y"]
+                sift_xy = (sift_x, sift_y)
 
                 sift_ab = AnnotationBbox(sift_imagebox, sift_xy,
                                          xycoords='data',
                                          pad=0.0,
                                          frameon=False)
-
                 
 
             if test_on_the_fly:
@@ -361,6 +373,12 @@ def show_graphs(v, f):
             else:
                 xy = (xs[i], ys[i])
 
+
+            if args.use_normal:
+                ab = AnnotationBbox(imagebox, xy,
+                                    xycoords='data',
+                                    pad=0.0,
+                                    frameon=False)
 
             if args.filter:
                 my_filter.update(pred.T)
@@ -386,16 +404,11 @@ def show_graphs(v, f):
                 
             if i != args.start_pic:
                 
-                drone_artist.remove()
+                if args.use_normal: drone_artist.remove()
                 
                 if args.filter: filtered_drone_artist.remove()
                 if args.use_sift: sift_drone_artist.remove()
                 
-            ab = AnnotationBbox(imagebox, xy,
-            xycoords='data',
-            pad=0.0,
-            frameon=False)
-
             if test_on_the_fly:
                 pass
             else:
@@ -415,9 +428,9 @@ def show_graphs(v, f):
                 line_opti.set_ydata(ys_opti[i])
 
             if i == args.start_pic:
-                img_artist = ax_inflight.imshow(pic)
+                img_artist = ax_inflight.imshow(pic_c)
             else:
-                img_artist.set_data(pic)
+                img_artist.set_data(pic_c)
 
             if args.mode == 1 or args.mode == 2:
                 if i == args.start_pic:
@@ -427,7 +440,7 @@ def show_graphs(v, f):
                         rect.set_height(h)
 
 
-            drone_artist = ax.add_artist(ab)
+            if args.use_normal: drone_artist = ax.add_artist(ab)
             if args.filter: filtered_drone_artist = ax.add_artist(filtered_ab)
             if args.use_sift: sift_drone_artist = ax.add_artist(sift_ab)
 

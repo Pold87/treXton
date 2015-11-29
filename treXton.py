@@ -60,7 +60,7 @@ def Jeffrey(p, q):
     return j
 
 
-def extract_textons(img, max_textons=None, args=None):
+def extract_textons(img, max_textons=None, args=None, real_max_textons=800):
 
     """
     This function extract textons from an image. If max_textons is set
@@ -70,7 +70,7 @@ def extract_textons(img, max_textons=None, args=None):
 
     patches = image.extract_patches_2d(img, 
                                        (args.texton_size, args.texton_size),
-                                       max_textons)
+                                       real_max_textons)
 
     # Flatten 2D array
     patches = patches.reshape(-1, args.texton_size ** 2)
@@ -84,11 +84,14 @@ def extract_textons(img, max_textons=None, args=None):
         new_zero = - mean / stdv
 
         
+    counter = 0
     for patch in patches:
         #if not all(patch == patch[0]):
         
         if not all(patch == new_zero):
             new_patches.append(patch)
+            counter += 1
+        if counter == max_textons: break
 
     if len(new_patches) == 0:
         new_patches.append(patches[0])
@@ -120,7 +123,8 @@ def extract_textons_from_path(path, max_textons=100):
     for pic_num in range(start, stop, step):
 #    for pic_num in range(num_draug_pics):
 
-        genimg_file = path + str(pic_num) + ".png"
+        genimg_file = path + str(pic_num) + "_0.png"
+        print(genimg_file)
         
         genimg = cv2.imread(genimg_file, 0)
 
@@ -139,7 +143,7 @@ def extract_textons_from_path(path, max_textons=100):
             
     for pic_num in range(start, stop, step):
 
-        genimg_file = path + str(pic_num) + ".png"
+        genimg_file = path + str(pic_num) + "_0.png"
         genimg = cv2.imread(genimg_file, 0)
 
         # Standardize
@@ -288,13 +292,15 @@ def train_classifier_draug(path,
     genimgs_path = base_dir
     testimgs_path = args.test_imgs_path
     #coordinates = pd.read_csv(base_dir + "targets_gtl.csv")
-    coordinates_gtl = pd.read_csv("target_gtl.csv")
-    coordinates_draug = pd.read_csv("../draug/targets.csv")
+    coordinates_gtl = pd.read_csv("target_gtl_large.csv")
+   # coordinates_draug = pd.read_csv("../draug/targets.csv")
 
-    # Extract patches of the training image
-    training_textons = extract_textons_from_path(path, max_textons)        
 
     if args.clustering:
+
+        # Extract patches of the training image
+        training_textons = extract_textons_from_path(path, max_textons)        
+
         # Apply k-Means on the training image
         classifier, training_clusters, centers = train_and_cluster_textons(textons=training_textons, 
                                                                            n_clusters=n_clusters)
@@ -318,7 +324,7 @@ def train_classifier_draug(path,
 #    rf_top_left = KNeighborsRegressor(p=1)
 
 
-    arguments = {'max_depth': 30,
+    arguments = {'max_depth': 15,
                  'learning_rate': 0.01,
                  'n_estimators':1200,
                  'subsample': 0.85,
@@ -338,7 +344,9 @@ def train_classifier_draug(path,
         
     
     else:
-        clf0 = RandomForestRegressor(1000, n_jobs=-1)
+        #clf0 = RandomForestRegressor(100)
+        #clf1 = RandomForestRegressor(100)
+        clf0 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=11)
         #clf0 = KNeighborsRegressor(weights='uniform', n_neighbors=7, p=3)
         clf1 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=9)
         clfs = [clf0, clf1]
@@ -350,65 +358,74 @@ def train_classifier_draug(path,
 
     mean, stdv = np.load("mean_stdv.npy")
 
-    picturenumbers = np.random.randint(20, 300, 100)
+    picturenumbers = np.random.randint(0, 220, 100)
+    picturenumbers = range(0, 1400, 1)
+    picturevariants = 5
 
     for i in picturenumbers:
 
-        genimg = genimgs_path + str(i) + ".png"
+        for j in range(picturevariants):
 
-        #print("Genimg is", genimg)
-        
-        query_image = cv2.imread(genimg, 0)
+            genimg = genimgs_path + str(i) + "_" + str(j) + ".png"
 
-        if args.standardize:
-            query_image = query_image - mean
-            query_image = query_image / stdv
+            #print("Genimg is", genimg)
 
-        #cv2.imwrite(str(i) + "_normalized.png", query_image)
-        
-        top_left_x = coordinates_gtl.ix[i, "x"]
-        top_left_y = coordinates_gtl.ix[i, "y"]
-        
-        if args.do_separate:
-            y_top_left.append(top_left_x)
-            y_bottom_right.append(top_left_y)
-        else:
-            y_top_left.append((top_left_x, top_left_y))
+            query_image = cv2.imread(genimg, 0)
 
-            
-        query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
-            
-        histograms.append(query_histogram)
+            if args.standardize:
+                query_image = query_image - mean
+                query_image = query_image / stdv
+
+            #cv2.imwrite(str(i) + "_normalized.png", query_image)
+
+            top_left_x = coordinates_gtl.ix[i, "x"]
+            top_left_y = coordinates_gtl.ix[i, "y"]
+
+            if args.do_separate:
+                y_top_left.append(top_left_x)
+                y_bottom_right.append(top_left_y)
+            else:
+                y_top_left.append((top_left_x, top_left_y))
+
+
+            query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
+
+            histograms.append(query_histogram)
 
     # Get histograms and targets from draug
-    for i in range(0, 4800, 1):
 
-        mydraugpath = "../draug/genimgs/"
-        genimg = mydraugpath + str(i) + ".png"
+    use_draug = False
 
-        #print("Genimg is", genimg)
-        
-        query_image = cv2.imread(genimg, 0)
+    if use_draug:
 
-        if args.standardize:
-            query_image = query_image - mean
-            query_image = query_image / stdv
+        for i in range(0, 4800, 1):
 
-        #cv2.imwrite(str(i) + "_normalized.png", query_image)
-        
-        top_left_x = coordinates_draug.ix[i, "x"]
-        top_left_y = coordinates_draug.ix[i, "y"]
-        
-        if args.do_separate:
-            y_top_left.append(top_left_x)
-            y_bottom_right.append(top_left_y)
-        else:
-            y_top_left.append((top_left_x, top_left_y))
+            mydraugpath = "../draug/genimgs/"
+            genimg = mydraugpath + str(i) + ".png"
 
-            
-        query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
-            
-        histograms.append(query_histogram)
+            #print("Genimg is", genimg)
+
+            query_image = cv2.imread(genimg, 0)
+
+            if args.standardize:
+                query_image = query_image - mean
+                query_image = query_image / stdv
+
+            #cv2.imwrite(str(i) + "_normalized.png", query_image)
+
+            top_left_x = coordinates_draug.ix[i, "x"]
+            top_left_y = coordinates_draug.ix[i, "y"]
+
+            if args.do_separate:
+                y_top_left.append(top_left_x)
+                y_bottom_right.append(top_left_y)
+            else:
+                y_top_left.append((top_left_x, top_left_y))
+
+
+            query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
+
+            histograms.append(query_histogram)
 
     if args.tfidf:
         histograms = tfidf.fit_transform(histograms).todense()
@@ -452,7 +469,7 @@ def main_draug(args):
     genimgs_path = base_dir + "genimgs/"
     testimgs_path = args.test_imgs_path
 #    coordinates = pd.read_csv(base_dir + "targets.csv")
-    coordinates = pd.read_csv("target_gtl.csv")
+    coordinates = pd.read_csv("target_gtl_large.csv")
 
     # Idea: For an input image, calculate the histogram of clusters, i.e.
     # how often does each texton from the dictionary (i.e. the example
@@ -471,7 +488,7 @@ def main_draug(args):
     max_textons = args.max_textons
     n_clusters = args.num_textons
     
-    path = "../datasets/mat/"
+    path = "../draug/genimgs_folder/"
 
     rf_top_left,  histograms, y_top_left, classifier, weights = train_classifier_draug(
         path=path,
@@ -581,8 +598,8 @@ if __name__ == "__main__":
     parser.add_argument("-nv", "--num_valid_pics", type=int, help="The amount of valid pictures to use", default=49)
     parser.add_argument("-sv", "--start_valid", type=int, help="Filenumber of the first valid picture", default=950)
     parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=40)
-    parser.add_argument("-d", "--dir", default="../datasets/mat/", help="Path to draug directory")
-    parser.add_argument("-tp", "--test_imgs_path", default="/home/pold87/Documents/datasets/mat/", help="Path to test images")
+    parser.add_argument("-d", "--dir", default="../draug/genimgs_folder/", help="Path to draug directory")
+    parser.add_argument("-tp", "--test_imgs_path", default="imgs_straight/", help="Path to test images")
     parser.add_argument("-s", "--start_pic_num", type=int, default=20, help="Discard the first pictures (offset)")
     parser.add_argument("-g", "--show_graphs", help="Show graphs of textons", action="store_true")
     parser.add_argument("-ttr", "--test_on_trainset", help="Test on trainset (calculate training error)", action="store_false")

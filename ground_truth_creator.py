@@ -34,14 +34,14 @@ def main(args):
     targets['x'] = xs
     targets['y'] = ys
 
-    targets.to_csv("target_gtl.csv", index=False)
+    targets.to_csv("target_gtl_large.csv", index=False)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--mymap", default="../draug/img/bestnewmat.png", help="Path to the mat image")
-    parser.add_argument("-b", "--basedir", default="../datasets/mat/", help="Path to the images")
-    parser.add_argument("-s", "--num_pics", default=324, help="Amount of pictures", type=int)
+    parser.add_argument("-b", "--basedir", default="../orthomap/imgs/", help="Path to the images")
+    parser.add_argument("-s", "--num_pics", default=1570, help="Amount of pictures", type=int)
     args = parser.parse_args()
 
     main(args)
