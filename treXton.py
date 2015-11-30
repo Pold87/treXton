@@ -33,34 +33,15 @@ import configargparse
 
 tfidf = TfidfTransformer()
 
-def xlog(xi, yi):
-    if xi == 0 or yi == 0:
-        return 0
-    else:
-        return xi*log(float(xi)/float(yi),2)
+def RGB2Opponent(img):
 
-def KLD(x,y):
-    """ Kullback Leibler divergence """
-    return sum([xlog(xi, yi) for xi, yi in zip(x, y)])
+    A = np.array([[0.06, 0.63, 0.27],
+                   [0.30, 0.04, -0.35],
+                   [0.34, -0.60, 0.17]])
 
-def JSD(p, q):
-    """ Jensen Shannon divergence """
-    p = np.array(p)
-    q = np.array(q)
-    return sqrt(0.5* KLD(p, 0.5*(p + q)) + 0.5 * KLD(q, 0.5*(p + q)))
+    return np.dot(img, A.T)
 
-def Jeffrey(p, q):
-    """ Jeffreys divergence """
-    j = 0
-    for a, b in zip(p, q):
-        if a == 0 or b == 0:
-            pass
-        else:
-            j += (a-b)*(log(a)-log(b))
-    return j
-
-
-def extract_textons(img, max_textons=None, args=None, real_max_textons=800):
+def extract_textons(img, max_textons, args, real_max_textons, channel):
 
     """
     This function extract textons from an image. If max_textons is set
@@ -80,15 +61,15 @@ def extract_textons(img, max_textons=None, args=None, real_max_textons=800):
 
     new_zero = 0
     if args.standardize:
-        mean, stdv = np.load("mean_stdv.npy")
+        
+        mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
         new_zero = - mean / stdv
 
-        
     counter = 0
     for patch in patches:
         #if not all(patch == patch[0]):
         
-        if not all(patch == new_zero):
+        if not all(patch == new_zero) or not all(patch == 0):
             new_patches.append(patch)
             counter += 1
         if counter == max_textons: break
@@ -96,10 +77,12 @@ def extract_textons(img, max_textons=None, args=None, real_max_textons=800):
     if len(new_patches) == 0:
         new_patches.append(patches[0])
 
+    print("Channel", channel, "Size", len(new_patches))
+
     return new_patches
 
 
-def extract_textons_from_path(path, max_textons=100):
+def extract_textons_from_path(path, max_textons=100, channel=0):
 
     """
     This function extract textons from an image. If max_textons is set
@@ -111,45 +94,77 @@ def extract_textons_from_path(path, max_textons=100):
 
     all_patches = []
 
-
     # For standarization
-    img_means = []
-    img_vars = []
+    img_means_per_channel = []
+    img_vars_per_channel = []
 
-    start = 70
-    stop = 300
-    step = 4
+    start = 0
+    stop = 90
+    step = 1
 
     for pic_num in range(start, stop, step):
-#    for pic_num in range(num_draug_pics):
 
-        genimg_file = path + str(pic_num) + "_0.png"
+
+        if args.use_draug_folder:
+            genimg_file = path + str(pic_num) + "_0.png"
+        else:
+            genimg_file = path + str(pic_num) + ".png"
         print(genimg_file)
         
-        genimg = cv2.imread(genimg_file, 0)
+        genimg = imread_opponent(genimg_file)
+        genimg = genimg[:, :, channel]
 
-        img_means.append(genimg.mean())
-        img_vars.append(genimg.var())
+        img_means_per_channel.append(genimg.mean())
+        img_vars_per_channel.append(genimg.var())
+
+    
+    if channel == 0:
+        np.save("imgs_vars.npy", img_vars_per_channel)
+        np.save("imgs_vars_per_channel.npy", img_vars_per_channel)        
+        np.save("imgs_means_per_channel.npy", img_means_per_channel)
+        
+    else:
+        img_vars = np.load("imgs_vars.npy")
 
     if args.standardize:
-        mean_imgs = np.mean(img_means)
-        stdv_imgs = np.sqrt(np.mean(img_vars))
+        mean_imgs = np.mean(img_means_per_channel)
+        stdv_imgs = np.sqrt(np.mean(img_vars_per_channel))
 
         print("mean:", mean_imgs)
         print("stdv:", stdv_imgs)
     
         vals = np.array([mean_imgs, stdv_imgs])
-        np.save("mean_stdv.npy", vals)
-            
+        np.save("mean_stdv_" + str(channel) + ".npy", vals)
+
+    k = 0
     for pic_num in range(start, stop, step):
 
-        genimg_file = path + str(pic_num) + "_0.png"
-        genimg = cv2.imread(genimg_file, 0)
+        if args.use_draug_folder:
+            genimg_file = path + str(pic_num) + "_0.png"
+        else:
+            genimg_file = path + str(pic_num) + ".png"
 
-        # Standardize
+        genimg = imread_opponent(genimg_file)
+        genimg = genimg[:, :, channel]
+
+        if args.color_standardize:
+            if channel == 0:
+                mymean = np.mean(np.ravel(genimg))
+                mystdv = np.std(np.ravel(genimg))
+
+                genimg = genimg - mymean
+                genimg = genimg / mystdv
+
+            else:
+                print("img_vars[k]", img_vars[k])
+                genimg = genimg / img_vars[k]
+                print(genimg)
+
         if args.standardize:
-            genimg = genimg - mean_imgs
-            genimg = genimg / stdv_imgs
+            mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
+            genimg = genimg - mean
+            genimg = genimg / stdv
+
 
         patches = image.extract_patches_2d(genimg, 
                                            (args.texton_size, args.texton_size),
@@ -159,6 +174,7 @@ def extract_textons_from_path(path, max_textons=100):
         patches = patches.reshape(-1, args.texton_size ** 2)
 
         all_patches.extend(patches)
+        k += 1
 
     return all_patches
 
@@ -257,10 +273,10 @@ def display_histogram(histogram):
     plt.show()
 
 
-def img_to_texton_histogram(img, classifier, max_textons, n_clusters, weights=None, args=None):
+def img_to_texton_histogram(img, classifier, max_textons, n_clusters, weights, args, channel):
 
     # Extract all textons of the query image
-    textons = extract_textons(img, max_textons, args)
+    textons = extract_textons(img, max_textons, args, 1000, channel)
 
     # Get classes of textons of the query image
     clusters = cluster_textons(textons, classifier)
@@ -280,6 +296,20 @@ def img_to_texton_histogram(img, classifier, max_textons, n_clusters, weights=No
 
     return histogram
 
+def imread_opponent(path):
+
+    # Read as RGB
+    img = plt.imread(path, 1)
+
+    # Convert to opponent space
+    img = RGB2Opponent(img)
+
+    return img
+
+def imread_opponent_gray(path):
+
+    return imread_opponent(path)[:, :, 0]
+
 
 def train_classifier_draug(path,
                            max_textons=None,
@@ -292,24 +322,33 @@ def train_classifier_draug(path,
     genimgs_path = base_dir
     testimgs_path = args.test_imgs_path
     #coordinates = pd.read_csv(base_dir + "targets_gtl.csv")
-    coordinates_gtl = pd.read_csv("target_gtl_large.csv")
+    coordinates_gtl = pd.read_csv("boodschappen.csv")
    # coordinates_draug = pd.read_csv("../draug/targets.csv")
 
-
+    classifiers = []
     if args.clustering:
 
-        # Extract patches of the training image
-        training_textons = extract_textons_from_path(path, max_textons)        
+        for channel in range(3):
 
-        # Apply k-Means on the training image
-        classifier, training_clusters, centers = train_and_cluster_textons(textons=training_textons, 
+            # Extract patches of the training image
+            training_textons = extract_textons_from_path(path, max_textons, channel)
+
+            # Apply k-Means on the training image
+            classifier, training_clusters, centers = train_and_cluster_textons(textons=training_textons, 
                                                                            n_clusters=n_clusters)
-        joblib.dump(classifier, 'classifiers/kmeans.pkl') 
+
+            classifiers.append(classifier)
+            
+            joblib.dump(classifier, 'classifiers/kmeans' + str(channel) + '.pkl')
+            
 
     else:
 
-        # Load classifier from file
-        classifier = joblib.load('classifiers/kmeans.pkl') 
+        for channel in range(3):
+
+            # Load classifier from file
+            classifier = joblib.load('classifiers/kmeans' + str(channel) + '.pkl')
+            classifiers.append(classifier)
 
 
     histograms = []
@@ -344,9 +383,9 @@ def train_classifier_draug(path,
         
     
     else:
-        #clf0 = RandomForestRegressor(100)
+        clf0 = RandomForestRegressor(500)
         #clf1 = RandomForestRegressor(100)
-        clf0 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=11)
+        #clf0 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=11)
         #clf0 = KNeighborsRegressor(weights='uniform', n_neighbors=7, p=3)
         clf1 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=9)
         clfs = [clf0, clf1]
@@ -356,28 +395,41 @@ def train_classifier_draug(path,
 
 #    genimgs = glob.glob(genimgs_path + "*.png")
 
-    mean, stdv = np.load("mean_stdv.npy")
-
     picturenumbers = np.random.randint(0, 220, 100)
-    picturenumbers = range(0, 1400, 1)
-    picturevariants = 5
+    picturenumbers = range(0, 95, 1)
 
+    if args.use_draug_folder:
+        picturevariants = 10
+    else:
+        picturevariants = 1
+        
     for i in picturenumbers:
 
         for j in range(picturevariants):
 
-            genimg = genimgs_path + str(i) + "_" + str(j) + ".png"
+            if picturevariants == 1:
+                genimg = genimgs_path + str(i) + ".png"
+            else:
+                genimg = genimgs_path + str(i) + "_" + str(j) + ".png"
 
-            #print("Genimg is", genimg)
 
-            query_image = cv2.imread(genimg, 0)
+            query_image = imread_opponent(genimg)
 
+            mymean = np.mean(np.ravel(query_image[:, :, 0]))
+            mystdv = np.std(np.ravel(query_image[:, :, 0]))
+
+            if args.color_standardize:
+                query_image[:, :, 0] = query_image[:, :, 0] - mymean
+                query_image[:, :, 0] = query_image[:, :, 0] / mystdv                
+                query_image[:, :, 1] = query_image[:, :, 1] / mystdv
+                query_image[:, :, 2] = query_image[:, :, 2] / mystdv            
+            
             if args.standardize:
-                query_image = query_image - mean
-                query_image = query_image / stdv
-
-            #cv2.imwrite(str(i) + "_normalized.png", query_image)
-
+                for channel in range(3):
+                    mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
+                    query_image[:, :, channel] = query_image[:, :, channel] - mean
+                    query_image[:, :, channel] = query_image[:, :, channel] / stdv
+                
             top_left_x = coordinates_gtl.ix[i, "x"]
             top_left_y = coordinates_gtl.ix[i, "y"]
 
@@ -388,9 +440,15 @@ def train_classifier_draug(path,
                 y_top_left.append((top_left_x, top_left_y))
 
 
-            query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
+            query_histograms = []
+            for channel in range(3):
+                classifier = classifiers[channel]
+                query_histogram = img_to_texton_histogram(query_image[:, :, channel], classifier, max_textons, n_clusters, weights, args, channel)
+                query_histograms.append(query_histogram)
 
-            histograms.append(query_histogram)
+            query_histograms = np.ravel(query_histograms)
+
+            histograms.append(query_histograms)
 
     # Get histograms and targets from draug
 
@@ -403,9 +461,7 @@ def train_classifier_draug(path,
             mydraugpath = "../draug/genimgs/"
             genimg = mydraugpath + str(i) + ".png"
 
-            #print("Genimg is", genimg)
-
-            query_image = cv2.imread(genimg, 0)
+            query_image = imread_opponent_gray(genimg)
 
             if args.standardize:
                 query_image = query_image - mean
@@ -469,7 +525,7 @@ def main_draug(args):
     genimgs_path = base_dir + "genimgs/"
     testimgs_path = args.test_imgs_path
 #    coordinates = pd.read_csv(base_dir + "targets.csv")
-    coordinates = pd.read_csv("target_gtl_large.csv")
+    coordinates = pd.read_csv("boodschappen.csv")
 
     # Idea: For an input image, calculate the histogram of clusters, i.e.
     # how often does each texton from the dictionary (i.e. the example
@@ -488,7 +544,7 @@ def main_draug(args):
     max_textons = args.max_textons
     n_clusters = args.num_textons
     
-    path = "../draug/genimgs_folder/"
+    path = base_dir
 
     rf_top_left,  histograms, y_top_left, classifier, weights = train_classifier_draug(
         path=path,
@@ -505,7 +561,7 @@ def main_draug(args):
         for i in range(args.num_draug_pics):
 
             query_file = genimgs_path + str(i) + ".png"
-            query_image = cv2.imread(query_file, 0)
+            query_image = imread_opponent_gray(query_file)
 
             # previously: histograms[patch]
             histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
@@ -537,7 +593,7 @@ def main_draug(args):
         for i in range(args.start_valid, args.start_valid + args.num_valid_pics):
 
             query_file = genimgs_path + str(i) + ".png"
-            query_image = cv2.imread(query_file, 0)
+            query_image = imread_opponent_gray(query_file)
 
             # previously: histograms[patch]
             histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
@@ -571,7 +627,7 @@ def main_draug(args):
         for i in range(offset, offset + args.num_test_pics):
 
             query_file = testimgs_path + str(i) + ".jpg"
-            query_image = cv2.imread(query_file, 0)
+            query_image = imread_opponent_gray(query_file)
 
             histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
 
@@ -598,14 +654,14 @@ if __name__ == "__main__":
     parser.add_argument("-nv", "--num_valid_pics", type=int, help="The amount of valid pictures to use", default=49)
     parser.add_argument("-sv", "--start_valid", type=int, help="Filenumber of the first valid picture", default=950)
     parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=40)
-    parser.add_argument("-d", "--dir", default="../draug/genimgs_folder/", help="Path to draug directory")
+    parser.add_argument("-d", "--dir", default="../draug/genimgs_folder/", help="Path to draug directory")    
     parser.add_argument("-tp", "--test_imgs_path", default="imgs_straight/", help="Path to test images")
     parser.add_argument("-s", "--start_pic_num", type=int, default=20, help="Discard the first pictures (offset)")
     parser.add_argument("-g", "--show_graphs", help="Show graphs of textons", action="store_true")
     parser.add_argument("-ttr", "--test_on_trainset", help="Test on trainset (calculate training error)", action="store_false")
     parser.add_argument("-tte", "--test_on_testset", help="Test on testset (calculate error)", action="store_false")
     parser.add_argument("-tv", "--test_on_validset", help="Test on validset (calculate valid error)", action="store_false")
-    parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=100)
+    parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=30)
     parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=700)
     parser.add_argument("-o", "--use_optitrack", help="Use optitrack", action="store_true")
     parser.add_argument("-ts", "--texton_size", help="Size of the textons", type=int, default=5)
@@ -613,6 +669,8 @@ if __name__ == "__main__":
     parser.add_argument("-tfidf", "--tfidf", default=True, help="Perform tfidf", action="store_false")
     parser.add_argument("-std", "--standardize", default=True, help="Perform standarization", action="store_false")
     parser.add_argument("-ds", "--do_separate", default=True, help="Use two classifiers (x and y)", action="store_false")
+    parser.add_argument("-udf", "--use_draug_folder", default=False, help="Use picture enhanced by draug (folder)", action="store_true")
+    parser.add_argument("-cs", "--color_standardize", default=False, help="Standardize channel 2 and 3 by dividing them by channel 1", action="store_true")
     args = parser.parse_args()
     
     main_draug(args)

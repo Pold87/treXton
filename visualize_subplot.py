@@ -1,3 +1,5 @@
+from __future__ import division
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -20,7 +22,7 @@ from scipy.linalg import block_diag
 import thread
 import time
 import threading
-from treXton import img_to_texton_histogram
+from treXton import img_to_texton_histogram, RGB2Opponent
 import relocalize
 
 import seaborn as sns
@@ -29,14 +31,14 @@ sns.set(style='ticks', palette='Set1')
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-tp", "--test_imgs_path", default="imgs_straight/", help="Path to test images")
-parser.add_argument("-m", "--mymap", default="../draug/img/bestnewmat.png", help="Path to the mat image")
+parser.add_argument("-m", "--mymap", default="map.jpg", help="Path to the mat image")
 parser.add_argument("-p", "--predictions", default="predictions.npy", help="Path to the predictions of extract_textons_draug.py")
 parser.add_argument("-c", "--camera", default=False, help="Use camera for testing", action="store_true")
 parser.add_argument("-mo", "--mode", default=0, help="Use the camera (0), test on train pictures (1), test on test pictures (2)", type=int)
 parser.add_argument("-s", "--start_pic", default=950, help="Starting picture (offset)", type=int)
 parser.add_argument("-n", "--num_pictures", default=500, help="Amount of pictures for testing", type=int)
 parser.add_argument("-ts", "--texton_size", help="Size of the textons", type=int, default=5)
-parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=100)
+parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=30)
 parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=700)
 parser.add_argument("-tfidf", "--tfidf", default=True, help="Perform tfidf", action="store_false")
 parser.add_argument("-std", "--standardize", default=True, help="Perform standarization", action="store_false")
@@ -45,6 +47,7 @@ parser.add_argument("-f", "--filter", default=True, help="Use Kalman filter for 
 parser.add_argument("-us", "--use_sift", default=True, help="Use SIFT from OpenCV to display its estimation", action="store_false")
 parser.add_argument("-un", "--use_normal", default=True, help="Use normal drone to display its estimation", action="store_false")
 parser.add_argument("-ug", "--use_ground_truth", default=False, help="Use SIFT from OpenCV to display its estimation", action="store_true")
+parser.add_argument("-cs", "--color_standardize", default=False, help="Standardize channel 2 and 3 by dividing them by channel 1", action="store_true")
 args = parser.parse_args()
 
 mymap = args.mymap
@@ -160,7 +163,12 @@ def show_graphs(v, f):
     ax_inflight.set_title('Pictures taken during flight')
 
     # Load k-means
-    kmeans = joblib.load('classifiers/kmeans.pkl') 
+
+    kmeans = []
+    for channel in range(3):
+    
+        kmean = joblib.load('classifiers/kmeans' + str(channel) + '.pkl')
+        kmeans.append(kmean)
         
     # Load random forest
     if args.do_separate:
@@ -176,16 +184,16 @@ def show_graphs(v, f):
     tfidf = joblib.load('classifiers/tfidf.pkl') 
 
     if args.mode == 0:
+
+        #plt.gray()
         
         # Initialize camera
-        cap = cv2.VideoCapture(1)
+        cap = cv2.VideoCapture(0)
 
         xs = []
         ys = []
         
         i = 0
-
-        mean, stdv = np.load("mean_stdv.npy")
 
         if args.filter:
             my_filter = init_tracker()
@@ -195,19 +203,46 @@ def show_graphs(v, f):
 
             # Capture frame-by-frame
             ret, pic = cap.read()
-            pic = cv2.cvtColor(pic, cv2.COLOR_BGR2GRAY)
+            pic = cv2.cvtColor(pic, cv2.COLOR_BGR2RGB)
+            pic = RGB2Opponent(pic)
+
+            print(pic.shape)
 
             if args.standardize:
-                pic = pic - mean
-                pic = pic / stdv
+                for channel in range(3):
+                    mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
+                    pic[:, :, channel] = pic[:, :, channel] - mean
+                    pic[:, :, channel] = pic[:, :, channel] / stdv
+
 
             # Get texton histogram of picture
-            histogram = img_to_texton_histogram(pic,
-                                                kmeans,
-                                                args.max_textons,
-                                                args.num_textons,
-                                                1,
-                                                args)
+            query_histograms = []
+
+            mymean = np.mean(np.ravel(pic[:, :, 0]))
+            mystdv = np.std(np.ravel(pic[:, :, 0]))
+
+
+            if args.color_standardize:
+
+                pic[:, :, 0] = pic[:, :, 0] - mymean
+                pic[:, :, 0] = pic[:, :, 0] / mystdv
+                pic[:, :, 1] = pic[:, :, 1] / mystdv
+                pic[:, :, 2] = pic[:, :, 2] / mystdv
+                print(pic[:, :, 2])            
+
+            
+            for channel in range(3):
+                histogram = img_to_texton_histogram(pic[:, :, channel],
+                                                    kmeans[channel],
+                                                    args.max_textons,
+                                                    args.num_textons,
+                                                    1,
+                                                    args,
+                                                    channel)
+                query_histograms.append(histogram)
+                             
+            histogram = np.ravel(query_histograms)             
+             
 
             if args.tfidf:
                 histogram = tfidf.transform([histogram]).todense()
@@ -263,9 +298,9 @@ def show_graphs(v, f):
 
             if i == 0:
                 histo_bar = ax_opti.bar(np.arange(len(histogram)), histogram)
-                img_artist = ax_inflight.imshow(pic)
+                img_artist = ax_inflight.imshow(pic[:,:,0])
             else:
-                img_artist.set_data(pic)
+                img_artist.set_data(pic[:,:,0])
                 if args.use_normal: drone_artist.remove()
                 if args.filter: filtered_drone_artist.remove()
                 
