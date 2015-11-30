@@ -65,6 +65,14 @@ def extract_textons(img, max_textons, args, real_max_textons, channel):
         mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
         new_zero = - mean / stdv
 
+    if args.local_standardize:
+        
+        mymean = np.mean(np.ravel(img))
+        mystdv = np.std(np.ravel(img))
+
+        new_zero = - mymean / mystdv
+
+
     counter = 0
     for patch in patches:
         #if not all(patch == patch[0]):
@@ -159,6 +167,15 @@ def extract_textons_from_path(path, max_textons=100, channel=0):
                 print("img_vars[k]", img_vars[k])
                 genimg = genimg / img_vars[k]
                 print(genimg)
+
+        if args.local_standardize:
+
+            mymean = np.mean(np.ravel(genimg))
+            mystdv = np.std(np.ravel(genimg))
+
+            genimg = genimg - mymean
+            genimg = genimg / mystdv
+
 
         if args.standardize:
             mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
@@ -322,13 +339,13 @@ def train_classifier_draug(path,
     genimgs_path = base_dir
     testimgs_path = args.test_imgs_path
     #coordinates = pd.read_csv(base_dir + "targets_gtl.csv")
-    coordinates_gtl = pd.read_csv("boodschappen.csv")
+    coordinates_gtl = pd.read_csv("target_gtl_large.csv")
    # coordinates_draug = pd.read_csv("../draug/targets.csv")
 
     classifiers = []
     if args.clustering:
 
-        for channel in range(3):
+        for channel in range(args.channels):
 
             # Extract patches of the training image
             training_textons = extract_textons_from_path(path, max_textons, channel)
@@ -344,7 +361,7 @@ def train_classifier_draug(path,
 
     else:
 
-        for channel in range(3):
+        for channel in range(args.channels):
 
             # Load classifier from file
             classifier = joblib.load('classifiers/kmeans' + str(channel) + '.pkl')
@@ -396,10 +413,10 @@ def train_classifier_draug(path,
 #    genimgs = glob.glob(genimgs_path + "*.png")
 
     picturenumbers = np.random.randint(0, 220, 100)
-    picturenumbers = range(0, 95, 1)
+    picturenumbers = range(0, 1500, 1)
 
     if args.use_draug_folder:
-        picturevariants = 10
+        picturevariants = 5
     else:
         picturevariants = 1
         
@@ -415,17 +432,26 @@ def train_classifier_draug(path,
 
             query_image = imread_opponent(genimg)
 
-            mymean = np.mean(np.ravel(query_image[:, :, 0]))
-            mystdv = np.std(np.ravel(query_image[:, :, 0]))
+
+            if args.local_standardize:
+                for channel in range(args.channels):
+                    mymean = np.mean(np.ravel(query_image[:, :, channel]))
+                    mystdv = np.std(np.ravel(query_image[:, :, channel]))
+                    
+                    query_image[:, :, channel] = query_image[:, :, channel] - mymean
+                    query_image[:, :, channel] = query_image[:, :, channel] / mystdv
 
             if args.color_standardize:
+                mymean = np.mean(np.ravel(query_image[:, :, 0]))
+                mystdv = np.std(np.ravel(query_image[:, :, 0]))
+
                 query_image[:, :, 0] = query_image[:, :, 0] - mymean
                 query_image[:, :, 0] = query_image[:, :, 0] / mystdv                
                 query_image[:, :, 1] = query_image[:, :, 1] / mystdv
                 query_image[:, :, 2] = query_image[:, :, 2] / mystdv            
             
             if args.standardize:
-                for channel in range(3):
+                for channel in range(args.channels):
                     mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
                     query_image[:, :, channel] = query_image[:, :, channel] - mean
                     query_image[:, :, channel] = query_image[:, :, channel] / stdv
@@ -441,7 +467,7 @@ def train_classifier_draug(path,
 
 
             query_histograms = []
-            for channel in range(3):
+            for channel in range(args.channels):
                 classifier = classifiers[channel]
                 query_histogram = img_to_texton_histogram(query_image[:, :, channel], classifier, max_textons, n_clusters, weights, args, channel)
                 query_histograms.append(query_histogram)
@@ -525,7 +551,7 @@ def main_draug(args):
     genimgs_path = base_dir + "genimgs/"
     testimgs_path = args.test_imgs_path
 #    coordinates = pd.read_csv(base_dir + "targets.csv")
-    coordinates = pd.read_csv("boodschappen.csv")
+    coordinates = pd.read_csv("target_gtl_large.csv")
 
     # Idea: For an input image, calculate the histogram of clusters, i.e.
     # how often does each texton from the dictionary (i.e. the example
@@ -650,12 +676,13 @@ def main_draug(args):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("-nc", "--channels", type=int, help="Number of channels (1: grayscale, 3: color)", default=3)
     parser.add_argument("-nd", "--num_draug_pics", type=int, help="The amount of draug pictures to use", default=300)
     parser.add_argument("-nv", "--num_valid_pics", type=int, help="The amount of valid pictures to use", default=49)
     parser.add_argument("-sv", "--start_valid", type=int, help="Filenumber of the first valid picture", default=950)
     parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=40)
     parser.add_argument("-d", "--dir", default="../draug/genimgs_folder/", help="Path to draug directory")    
-    parser.add_argument("-tp", "--test_imgs_path", default="imgs_straight/", help="Path to test images")
+    parser.add_argument("-tp", "--test_imgs_path", default="../draug/genimgs_folder/", help="Path to test images")
     parser.add_argument("-s", "--start_pic_num", type=int, default=20, help="Discard the first pictures (offset)")
     parser.add_argument("-g", "--show_graphs", help="Show graphs of textons", action="store_true")
     parser.add_argument("-ttr", "--test_on_trainset", help="Test on trainset (calculate training error)", action="store_false")
@@ -671,6 +698,7 @@ if __name__ == "__main__":
     parser.add_argument("-ds", "--do_separate", default=True, help="Use two classifiers (x and y)", action="store_false")
     parser.add_argument("-udf", "--use_draug_folder", default=False, help="Use picture enhanced by draug (folder)", action="store_true")
     parser.add_argument("-cs", "--color_standardize", default=False, help="Standardize channel 2 and 3 by dividing them by channel 1", action="store_true")
+    parser.add_argument("-ls", "--local_standardize", default=False, help="Use local standardization", action="store_true")
     args = parser.parse_args()
     
     main_draug(args)
