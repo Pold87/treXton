@@ -5,3 +5,4 @@ python-emd/
 *.npy
 *.pkl
 *.tar.gz
+imgs/
