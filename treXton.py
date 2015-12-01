@@ -30,6 +30,7 @@ from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn import svm
 import xgboost as xgb
 import configargparse
+from treXtonConfig import parser
 
 tfidf = TfidfTransformer()
 
@@ -107,7 +108,7 @@ def extract_textons_from_path(path, max_textons=100, channel=0):
     img_vars_per_channel = []
 
     start = 0
-    stop = 90
+    stop = 85
     step = 1
 
     for pic_num in range(start, stop, step):
@@ -165,7 +166,7 @@ def extract_textons_from_path(path, max_textons=100, channel=0):
 
             else:
                 print("img_vars[k]", img_vars[k])
-                genimg = genimg / img_vars[k]
+                genimg = genimg / np.sqrt(img_vars[k])
                 print(genimg)
 
         if args.local_standardize:
@@ -339,7 +340,7 @@ def train_classifier_draug(path,
     genimgs_path = base_dir
     testimgs_path = args.test_imgs_path
     #coordinates = pd.read_csv(base_dir + "targets_gtl.csv")
-    coordinates_gtl = pd.read_csv("target_gtl_large.csv")
+    coordinates_gtl = pd.read_csv(args.ground_truth_labeler)
    # coordinates_draug = pd.read_csv("../draug/targets.csv")
 
     classifiers = []
@@ -413,10 +414,10 @@ def train_classifier_draug(path,
 #    genimgs = glob.glob(genimgs_path + "*.png")
 
     picturenumbers = np.random.randint(0, 220, 100)
-    picturenumbers = range(0, 1500, 1)
+    picturenumbers = range(0, args.num_draug_pics, 1)
 
     if args.use_draug_folder:
-        picturevariants = 5
+        picturevariants = 50
     else:
         picturevariants = 1
         
@@ -547,25 +548,12 @@ def display_query_and_location(query_image, location_image):
 def main_draug(args):
 
     # Settings
+    
     base_dir = args.dir
     genimgs_path = base_dir + "genimgs/"
     testimgs_path = args.test_imgs_path
 #    coordinates = pd.read_csv(base_dir + "targets.csv")
-    coordinates = pd.read_csv("target_gtl_large.csv")
-
-    # Idea: For an input image, calculate the histogram of clusters, i.e.
-    # how often does each texton from the dictionary (i.e. the example
-    # textons or texton cluster centers) occur.
-
-    # Afterwards, we do the same for a part of the 'map' and use that for
-    # a fast pre-localization algorithm
-
-    # To do this, we compare the query image with different views of the
-    # original image (for example with a sliding window)
-
-    # Ideally, it can also determine if we are currently between two
-    # clusters.
-
+    coordinates = pd.read_csv(args.ground_truth_labeler)
     
     max_textons = args.max_textons
     n_clusters = args.num_textons
@@ -669,36 +657,9 @@ def main_draug(args):
 
         if args.use_optitrack: 
             pass
-            
 
-
-                
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-nc", "--channels", type=int, help="Number of channels (1: grayscale, 3: color)", default=3)
-    parser.add_argument("-nd", "--num_draug_pics", type=int, help="The amount of draug pictures to use", default=300)
-    parser.add_argument("-nv", "--num_valid_pics", type=int, help="The amount of valid pictures to use", default=49)
-    parser.add_argument("-sv", "--start_valid", type=int, help="Filenumber of the first valid picture", default=950)
-    parser.add_argument("-t", "--num_test_pics", type=int, help="The amount of test images to use", default=40)
-    parser.add_argument("-d", "--dir", default="../draug/genimgs_folder/", help="Path to draug directory")    
-    parser.add_argument("-tp", "--test_imgs_path", default="../draug/genimgs_folder/", help="Path to test images")
-    parser.add_argument("-s", "--start_pic_num", type=int, default=20, help="Discard the first pictures (offset)")
-    parser.add_argument("-g", "--show_graphs", help="Show graphs of textons", action="store_true")
-    parser.add_argument("-ttr", "--test_on_trainset", help="Test on trainset (calculate training error)", action="store_false")
-    parser.add_argument("-tte", "--test_on_testset", help="Test on testset (calculate error)", action="store_false")
-    parser.add_argument("-tv", "--test_on_validset", help="Test on validset (calculate valid error)", action="store_false")
-    parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=30)
-    parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=700)
-    parser.add_argument("-o", "--use_optitrack", help="Use optitrack", action="store_true")
-    parser.add_argument("-ts", "--texton_size", help="Size of the textons", type=int, default=5)
-    parser.add_argument("-c", "--clustering", default=False, help="Do clustering or load clusters from file", action="store_true")
-    parser.add_argument("-tfidf", "--tfidf", default=True, help="Perform tfidf", action="store_false")
-    parser.add_argument("-std", "--standardize", default=True, help="Perform standarization", action="store_false")
-    parser.add_argument("-ds", "--do_separate", default=True, help="Use two classifiers (x and y)", action="store_false")
-    parser.add_argument("-udf", "--use_draug_folder", default=False, help="Use picture enhanced by draug (folder)", action="store_true")
-    parser.add_argument("-cs", "--color_standardize", default=False, help="Standardize channel 2 and 3 by dividing them by channel 1", action="store_true")
-    parser.add_argument("-ls", "--local_standardize", default=False, help="Use local standardization", action="store_true")
     args = parser.parse_args()
     
     main_draug(args)
