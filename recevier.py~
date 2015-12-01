@@ -1,0 +1,10 @@
+import zmq
+import time
+context = zmq.Context()
+ 
+subscriber = context.socket (zmq.SUB)
+subscriber.connect ("tcp://127.0.0.1:12345")
+ 
+while True:
+    message = subscriber.recv()
+    print(message)

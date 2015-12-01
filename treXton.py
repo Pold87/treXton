@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from __future__ import division
 
 import cv2
@@ -417,7 +419,7 @@ def train_classifier_draug(path,
     picturenumbers = range(0, args.num_draug_pics, 1)
 
     if args.use_draug_folder:
-        picturevariants = 50
+        picturevariants = 3
     else:
         picturevariants = 1
         

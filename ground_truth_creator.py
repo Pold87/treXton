@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import relocalize
 import os
 import argparse
@@ -34,14 +36,14 @@ def main(args):
     targets['x'] = xs
     targets['y'] = ys
 
-    targets.to_csv("boodschappen.csv", index=False)
+    targets.to_csv("sift_targets.csv", index=False)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--mymap", default="map.jpg", help="Path to the mat image")
     parser.add_argument("-b", "--basedir", default="imgs/", help="Path to the images")
-    parser.add_argument("-s", "--num_pics", default=85, help="Amount of pictures", type=int)
+    parser.add_argument("-s", "--num_pics", default=2000, help="Amount of pictures", type=int)
     args = parser.parse_args()
 
     main(args)

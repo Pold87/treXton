@@ -1,4 +1,4 @@
-*~
+atu*~
 *#
 *.pyc
 python-emd/
@@ -6,3 +6,5 @@ python-emd/
 *.pkl
 *.tar.gz
 imgs/
+genimgs_folder/
+hugin_pics/
