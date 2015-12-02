@@ -20,27 +20,12 @@ from scipy.linalg import block_diag
 import thread
 import time
 import threading
-from treXton import img_to_texton_histogram
+from treXton import img_to_texton_histogram, RGB2Opponent, imread_opponent
+from treXtonConfig import parser
 
-
-parser = argparse.ArgumentParser()
-parser.add_argument("-tp", "--test_imgs_path", default="../datasets/mat/", help="Path to test images")
-parser.add_argument("-m", "--mymap", default="../draug/img/bestnewmat.png", help="Path to the mat image")
-parser.add_argument("-p", "--predictions", default="predictions.npy", help="Path to the predictions of extract_textons_draug.py")
-parser.add_argument("-c", "--camera", default=False, help="Use camera for testing", action="store_true")
-parser.add_argument("-mo", "--mode", default=0, help="Use the camera (0), test on train pictures (1), test on test pictures (2)", type=int)
-parser.add_argument("-s", "--start_pic", default=950, help="Starting picture (offset)", type=int)
-parser.add_argument("-n", "--num_pictures", default=500, help="Amount of pictures for testing", type=int)
-parser.add_argument("-ts", "--texton_size", help="Size of the textons", type=int, default=5)
-parser.add_argument("-nt", "--num_textons", help="Size of texton dictionary", type=int, default=200)
-parser.add_argument("-mt", "--max_textons", help="Maximum amount of textons per image", type=int, default=1000)
-parser.add_argument("-tfidf", "--tfidf", default=True, help="Perform tfidf", action="store_false")
-parser.add_argument("-std", "--standardize", default=True, help="Perform standarization", action="store_false")
-parser.add_argument("-ds", "--do_separate", default=True, help="Use two classifiers (x and y)", action="store_false")
-parser.add_argument("-f", "--filter", default=True, help="Use Kalman filter for filtering", action="store_false")
 args = parser.parse_args()
-
 mymap = args.mymap
+
 
 def init_tracker():
     tracker = KalmanFilter(dim_x=4, dim_z=2)
@@ -83,8 +68,14 @@ def rotate_coordinates(xs, ys, theta):
 
 def main():
 
+
     # Load k-means
-    kmeans = joblib.load('classifiers/kmeans.pkl') 
+
+    kmeans = []
+    for channel in range(3):
+    
+        kmean = joblib.load('classifiers/kmeans' + str(channel) + '.pkl')
+        kmeans.append(kmean)
         
     # Load random forest
     if args.do_separate:
@@ -98,11 +89,9 @@ def main():
 
     # Load tfidf
     tfidf = joblib.load('classifiers/tfidf.pkl') 
-
-
         
     path = args.test_imgs_path
-    labels = pd.read_csv("handlabeled/playingmat.csv", index_col=0)
+    labels = pd.read_csv("../datasets/imgs/sift_targets.csv", index_col=0)
 
     if args.standardize:
         mean, stdv = np.load("mean_stdv.npy")
@@ -124,30 +113,60 @@ def main():
     for i in labels.index:
 
         img_path = path + str(i) + ".png"
-        pic = cv2.imread(img_path, 0)
+        pic = imread_opponent(img_path)
 
 
+        if args.color_standardize:
+
+            mymean = np.mean(np.ravel(pic[:, :, 0]))
+            mystdv = np.std(np.ravel(pic[:, :, 0]))
+
+
+            pic[:, :, 0] = pic[:, :, 0] - mymean
+            pic[:, :, 0] = pic[:, :, 0] / mystdv
+            pic[:, :, 1] = pic[:, :, 1] / mystdv
+            pic[:, :, 2] = pic[:, :, 2] / mystdv
+
+
+        if args.local_standardize:
+            for channel in range(args.channels):
+
+                mymean = np.mean(np.ravel(pic[:, :, channel]))
+                mystdv = np.std(np.ravel(pic[:, :, channel]))
+
+                pic[:, :, channel] = pic[:, :, channel] - mymean
+                pic[:, :, channel] = pic[:, :, channel] / mystdv
+
+            
         if args.standardize:
-            pic = pic - mean
-            pic = pic / stdv
-
+            for channel in range(args.channels):
+                mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
+                pic[:, :, channel] = pic[:, :, channel] - mean
+                pic[:, :, channel] = pic[:, :, channel] / stdv
+            
 
         # Get texton histogram of picture
-        histogram = img_to_texton_histogram(pic,
-                kmeans,
-                args.max_textons,
-                args.num_textons,
-                1,
-                args)
+        query_histograms = []
 
+                
+        for channel in range(args.channels):
+            histogram = img_to_texton_histogram(pic[:, :, channel],
+                                                    kmeans[channel],
+                                                    args.max_textons,
+                                                    args.num_textons,
+                                                    1,
+                                                    args,
+                                                    channel)
+            query_histograms.append(histogram)
+                             
+        histogram = np.ravel(query_histograms)             
+             
 
         if args.tfidf:
             histogram = tfidf.transform([histogram]).todense()
+            histogram = np.ravel(histogram)
 
-
-
-        histogram = np.ravel(histogram)
-
+        
         preds = []
         if args.do_separate:
             pred_x = clf_x.predict([histogram])

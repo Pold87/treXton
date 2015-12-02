@@ -21,7 +21,7 @@ from scipy.linalg import block_diag
 import thread
 import time
 import threading
-from treXton import img_to_texton_histogram, RGB2Opponent
+from treXton import img_to_texton_histogram, RGB2Opponent, imread_opponent
 import relocalize
 import configargparse
 import treXtonConfig
@@ -123,9 +123,9 @@ def show_graphs(v, f):
         ax_opti.set_title('Texton histogram')
         line_opti, = ax_opti.plot([], [], lw=2)
 
-        optitrack = pd.read_csv("../draug/targets.csv")
-        xs_opti = optitrack.x
-        ys_opti = optitrack.y
+        #optitrack = pd.read_csv("../draug/targets.csv")
+        #xs_opti = optitrack.x
+        #ys_opti = optitrack.y
         
         
     elif args.mode == 2:
@@ -194,7 +194,7 @@ def show_graphs(v, f):
     labels = pd.read_csv("handlabeled/playingmat.csv", index_col=0)
 
     if args.use_ground_truth:
-        truth = pd.read_csv("target_gtl_same_orient.csv")
+        truth = pd.read_csv("../datasets/imgs/sift_targets.csv")
         truth.set_index(['id'], inplace=True)
 
 
@@ -211,8 +211,8 @@ def show_graphs(v, f):
 
         else:
             img_path = path + str(i) + ".png"
-            pic_c = plt.imread(img_path, 1)
-            pic = cv2.imread(img_path, 0)
+            pic_c = imread_opponent(img_path)
+            pic = imread_opponent(img_path)
 
 
         if args.standardize:
@@ -318,7 +318,7 @@ def show_graphs(v, f):
             
 
         if args.use_ground_truth:
-            ground_truth =  (labels.x[i], labels.y[i])
+            ground_truth =  (truth.ix[i, "x"], truth.ix[i, "y"])
             diff =  np.subtract(ground_truth, xy)
             abs_diff = np.fabs(diff)
             errors_x.append(abs_diff[0])
@@ -341,6 +341,7 @@ def show_graphs(v, f):
             img_artist = ax_inflight.imshow(pic[:,:,0])
         else:
             img_artist.set_data(pic[:,:,0])
+            if args.use_sift: sift_drone_artist.remove()
             if args.use_normal: drone_artist.remove()
             if args.filter: filtered_drone_artist.remove()
             
@@ -349,65 +350,12 @@ def show_graphs(v, f):
     
         if args.use_normal: drone_artist = ax.add_artist(ab)
         if args.filter: filtered_drone_artist = ax.add_artist(filtered_ab)
+        if args.use_sift: sift_drone_artist = ax.add_artist(sift_ab)
 
-        plt.pause(.01)
+        plt.pause(.5)
             
         i += 1
         
-    if args.mode == 1 or args.mode == 2:
-
-
-        for i in range(args.start_pic, args.start_pic + args.num_pictures, 2):
-
-
-            if i != args.start_pic:
-                
-                if args.use_normal: drone_artist.remove()
-                
-                if args.filter: filtered_drone_artist.remove()
-                if args.use_sift: sift_drone_artist.remove()
-                
-            if test_on_the_fly:
-                pass
-            else:
-                # Update predictions graph
-                line.set_xdata(xs[max(args.start_pic, i - 13):i + 1]) 
-                line.set_ydata(ys[max(args.start_pic, i - 13):i + 1])
-
-                # Update optitrack graph
-                print(xs[max(args.start_pic, i - 25):i])
-
-#                line_opti.set_xdata(xs_opti[i])  # update the data
-#                line_opti.set_ydata(ys_opti[i])
-                #line_opti.set_array([xs_opti[i], ys_opti[i]])  # update the data
-
-            if args.mode == 2:
-                line_opti.set_xdata(xs_opti[i])  # update the data
-                line_opti.set_ydata(ys_opti[i])
-
-            if i == args.start_pic:
-                img_artist = ax_inflight.imshow(pic_c)
-            else:
-                img_artist.set_data(pic_c)
-
-            if args.mode == 1 or args.mode == 2:
-                if i == args.start_pic:
-                    histo_bar = ax_opti.bar(np.arange(len(histogram)), histogram)
-                else:
-                    for rect, h in zip(histo_bar, histogram):
-                        rect.set_height(h)
-
-
-            if args.use_normal: drone_artist = ax.add_artist(ab)
-            if args.filter: filtered_drone_artist = ax.add_artist(filtered_ab)
-            if args.use_sift: sift_drone_artist = ax.add_artist(sift_ab)
-
-            plt.pause(.8)
-                
-        if args.use_ground_truth:
-            print("errors", np.mean(errors))
-            print("errors x", np.mean(errors_x))
-            print("errors y", np.mean(errors_y))
     else:
         print("Unknown mode; Please specify a mode (0, 1, 2)")
 

@@ -10,7 +10,7 @@ echo ""
 ##################
 
 # Basedir of the images (this is basically the only important thing)
-basedir=~/Documents/Internship/treXton/imgs/
+basedir=~/Documents/treXton/imgs/
 
 # Create an orthomap using hugins
 create_orthomap=false
@@ -22,19 +22,23 @@ rename_files=false
 sift_gtl=false
 
 # Run draug for folder (augment image views)
-draug=false
+draug=true
 
 # Path to map (for matching SIFT)
-mymap=~/Documents/Internship/draug/img/bestnewmat.png
+mymap=~/Documents/draug/img/bestnewmat.png
 
 # Path to ground truth creator
-gtl=~/Documents/Internship/treXton/ground_truth_creator.py
+gtl=ground_truth_creator.py
 
 # Path to treXton
-treXton=~/Documents/Internship/treXton/treXton.py
+treXton=treXton.py
 
 # Use treXton (perform regression) 
 use_treXton=true
+
+# Number of augmented draug pics
+draug_pics=15
+
 
 ##################
 # Renaming process
@@ -43,24 +47,8 @@ use_treXton=true
 if $rename_files ; then
 echo "Start: Renaming files"
 
-# To avoid renaming files to already existing files create temporary
-# file names first
 cd $basedir
-a=0
-for i in *.png; do
-  new=$(printf "${basedir}%d_tmp.png" "$a")
-  mv -- "$i" "$new"
-  let a=a+1
-done
-
-# Actually rename files
-a=0
-for i in *.png; do
-  new=$(printf "${basedir}%d.png" "$a")
-  echo "$new"
-  mv -- "$i" "$new"
-  let a=a+1
-done
+renamer
 
 echo "Finished: Renaming files"
 fi
@@ -77,6 +65,7 @@ echo "Start: Creating orthomap"
 mkdir orthomap
 
 # Move files to new folder
+
 cp *{00..99..10}.png orthomap
 
 cd orthomap
@@ -117,7 +106,7 @@ if $draug ; then
 
 echo "Starting: Running draug for folder"
 
-draug_for_folder 5 $basedir
+draug_for_folder $draug_pics $basedir
 
 echo "Finished: Running draug for folder"
 

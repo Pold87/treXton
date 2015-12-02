@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# To avoid renaming files to already existing files create temporary
+# file names first
+a=0
+for i in *.png; do
+  new=$(printf "${basedir}%d_tmp.png" "$a")
+  mv -- "$i" "$new"
+  let a=a+1
+done
+
+# Actually rename files
+a=0
+for i in *.png; do
+  new=$(printf "${basedir}%d.png" "$a")
+  echo "$new"
+  mv -- "$i" "$new"
+  let a=a+1
+done

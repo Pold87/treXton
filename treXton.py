@@ -88,8 +88,6 @@ def extract_textons(img, max_textons, args, real_max_textons, channel):
     if len(new_patches) == 0:
         new_patches.append(patches[0])
 
-    print("Channel", channel, "Size", len(new_patches))
-
     return new_patches
 
 
@@ -419,7 +417,7 @@ def train_classifier_draug(path,
     picturenumbers = range(0, args.num_draug_pics, 1)
 
     if args.use_draug_folder:
-        picturevariants = 3
+        picturevariants = 15
     else:
         picturevariants = 1
         
