@@ -401,11 +401,11 @@ def train_classifier_draug(path,
         
     
     else:
-        clf0 = RandomForestRegressor(500)
-        #clf1 = RandomForestRegressor(100)
+        clf0 = RandomForestRegressor(200)
+        clf1 = RandomForestRegressor(200)
         #clf0 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=11)
         #clf0 = KNeighborsRegressor(weights='uniform', n_neighbors=7, p=3)
-        clf1 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=9)
+        #clf1 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=9)
         clfs = [clf0, clf1]
         
 
