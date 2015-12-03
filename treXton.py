@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.neighbors import NearestNeighbors, KNeighborsClassifier
-from sklearn.neighbors import LSHForest
+from sklearn.neighbors import LSHForest, DistanceMetric
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
+from sklearn.gaussian_process import GaussianProcess
 from collections import Counter
 from scipy.spatial import distance
 import texton_helpers
@@ -33,7 +34,12 @@ from sklearn import svm
 import xgboost as xgb
 import configargparse
 from treXtonConfig import parser
-
+from sklearn.metrics.pairwise import chi2_kernel
+from sknn.backend import lasagne
+from sklearn.neural_network import MLPRegressor
+from sknn.mlp import Regressor, Layer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import MinMaxScaler
 tfidf = TfidfTransformer()
 
 def RGB2Opponent(img):
@@ -328,6 +334,11 @@ def imread_opponent_gray(path):
 
     return imread_opponent(path)[:, :, 0]
 
+def mydist(x,y):
+    if x[0] == y[0]:
+        return 0
+    else:
+        return 1
 
 def train_classifier_draug(path,
                            max_textons=None,
@@ -381,34 +392,17 @@ def train_classifier_draug(path,
 #    rf_top_left = KNeighborsRegressor(p=1)
 
 
-    arguments = {'max_depth': 15,
-                 'learning_rate': 0.01,
-                 'n_estimators':1200,
-                 'subsample': 0.85,
-                 'min_child_weight': 6,
-                 'gamma': 2,
-                 'colsample_bytree': 0.75,
-                 'colsample_bylevel': 0.9,
+    arguments = {'max_depth': 50,
+                 'learning_rate': 0.08,
+                 'n_estimators':500,
+                 'nthread': 4,
+                 'subsample': 0.95,
+                 'min_child_weight': 1,
+                 'gamma': 0.01,
+                 'colsample_bytree': 0.95,
+                 'colsample_bylevel': 0.95,
                  'silent': True}
     
-    if args.do_separate:
-        clf_x_coord = xgb.XGBRegressor(**arguments)
-        clf_y_coord = xgb.XGBRegressor(**arguments)
-        #clf_x_coord = svm.LinearSVR(epsilon=0)
-        #clf_y_coord = svm.LinearSVR(epsilon=0)
-        #clf_x_coord = RandomForestRegressor(500, n_jobs=-1)
-        #clf_y_coord = RandomForestRegressor(500, n_jobs=-1)
-        
-    
-    else:
-        clf0 = RandomForestRegressor(200)
-        clf1 = RandomForestRegressor(200)
-        #clf0 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=11)
-        #clf0 = KNeighborsRegressor(weights='uniform', n_neighbors=7, p=3)
-        #clf1 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=9)
-        clfs = [clf0, clf1]
-        
-
     weights = 1
 
 #    genimgs = glob.glob(genimgs_path + "*.png")
@@ -416,103 +410,113 @@ def train_classifier_draug(path,
     picturenumbers = np.random.randint(0, 220, 100)
     picturenumbers = range(0, args.num_draug_pics, 1)
 
-    if args.use_draug_folder:
-        picturevariants = 15
+    if args.load_histograms:
+         histograms = np.load("histograms.npy")
+         y_top_left = np.load("y_top_left.npy")
+         y_bottom_right = np.load("y_bottom_right.npy")                           
     else:
-        picturevariants = 1
-        
-    for i in picturenumbers:
 
-        for j in range(picturevariants):
+        if args.use_draug_folder:
+            picturevariants = 15
+        else:
+            picturevariants = 1
 
-            if picturevariants == 1:
-                genimg = genimgs_path + str(i) + ".png"
-            else:
-                genimg = genimgs_path + str(i) + "_" + str(j) + ".png"
+        for i in picturenumbers:
+
+            for j in range(picturevariants):
+
+                if picturevariants == 1:
+                    genimg = genimgs_path + str(i) + ".png"
+                else:
+                    genimg = genimgs_path + str(i) + "_" + str(j) + ".png"
 
 
-            query_image = imread_opponent(genimg)
+                query_image = imread_opponent(genimg)
 
 
-            if args.local_standardize:
+                if args.local_standardize:
+                    for channel in range(args.channels):
+                        mymean = np.mean(np.ravel(query_image[:, :, channel]))
+                        mystdv = np.std(np.ravel(query_image[:, :, channel]))
+
+                        query_image[:, :, channel] = query_image[:, :, channel] - mymean
+                        query_image[:, :, channel] = query_image[:, :, channel] / mystdv
+
+                if args.color_standardize:
+                    mymean = np.mean(np.ravel(query_image[:, :, 0]))
+                    mystdv = np.std(np.ravel(query_image[:, :, 0]))
+
+                    query_image[:, :, 0] = query_image[:, :, 0] - mymean
+                    query_image[:, :, 0] = query_image[:, :, 0] / mystdv                
+                    query_image[:, :, 1] = query_image[:, :, 1] / mystdv
+                    query_image[:, :, 2] = query_image[:, :, 2] / mystdv            
+
+                if args.standardize:
+                    for channel in range(args.channels):
+                        mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
+                        query_image[:, :, channel] = query_image[:, :, channel] - mean
+                        query_image[:, :, channel] = query_image[:, :, channel] / stdv
+
+                top_left_x = coordinates_gtl.ix[i, "x"]
+                top_left_y = coordinates_gtl.ix[i, "y"]
+
+                if args.do_separate:
+                    y_top_left.append(top_left_x)
+                    y_bottom_right.append(top_left_y)
+                else:
+                    y_top_left.append((top_left_x, top_left_y))
+
+
+                query_histograms = []
                 for channel in range(args.channels):
-                    mymean = np.mean(np.ravel(query_image[:, :, channel]))
-                    mystdv = np.std(np.ravel(query_image[:, :, channel]))
-                    
-                    query_image[:, :, channel] = query_image[:, :, channel] - mymean
-                    query_image[:, :, channel] = query_image[:, :, channel] / mystdv
+                    classifier = classifiers[channel]
+                    query_histogram = img_to_texton_histogram(query_image[:, :, channel], classifier, max_textons, n_clusters, weights, args, channel)
+                    query_histograms.append(query_histogram)
 
-            if args.color_standardize:
-                mymean = np.mean(np.ravel(query_image[:, :, 0]))
-                mystdv = np.std(np.ravel(query_image[:, :, 0]))
+                query_histograms = np.ravel(query_histograms)
 
-                query_image[:, :, 0] = query_image[:, :, 0] - mymean
-                query_image[:, :, 0] = query_image[:, :, 0] / mystdv                
-                query_image[:, :, 1] = query_image[:, :, 1] / mystdv
-                query_image[:, :, 2] = query_image[:, :, 2] / mystdv            
-            
-            if args.standardize:
-                for channel in range(args.channels):
-                    mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
-                    query_image[:, :, channel] = query_image[:, :, channel] - mean
-                    query_image[:, :, channel] = query_image[:, :, channel] / stdv
+                histograms.append(query_histograms)
+        np.save("histograms.npy", np.array(histograms))
+        np.save("y_top_left.npy", np.array(y_top_left))
+        np.save("y_bottom_right.npy", np.array(y_bottom_right))                
                 
-            top_left_x = coordinates_gtl.ix[i, "x"]
-            top_left_y = coordinates_gtl.ix[i, "y"]
-
-            if args.do_separate:
-                y_top_left.append(top_left_x)
-                y_bottom_right.append(top_left_y)
-            else:
-                y_top_left.append((top_left_x, top_left_y))
-
-
-            query_histograms = []
-            for channel in range(args.channels):
-                classifier = classifiers[channel]
-                query_histogram = img_to_texton_histogram(query_image[:, :, channel], classifier, max_textons, n_clusters, weights, args, channel)
-                query_histograms.append(query_histogram)
-
-            query_histograms = np.ravel(query_histograms)
-
-            histograms.append(query_histograms)
-
-    # Get histograms and targets from draug
-
-    use_draug = False
-
-    if use_draug:
-
-        for i in range(0, 4800, 1):
-
-            mydraugpath = "../draug/genimgs/"
-            genimg = mydraugpath + str(i) + ".png"
-
-            query_image = imread_opponent_gray(genimg)
-
-            if args.standardize:
-                query_image = query_image - mean
-                query_image = query_image / stdv
-
-            #cv2.imwrite(str(i) + "_normalized.png", query_image)
-
-            top_left_x = coordinates_draug.ix[i, "x"]
-            top_left_y = coordinates_draug.ix[i, "y"]
-
-            if args.do_separate:
-                y_top_left.append(top_left_x)
-                y_bottom_right.append(top_left_y)
-            else:
-                y_top_left.append((top_left_x, top_left_y))
-
-
-            query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
-
-            histograms.append(query_histogram)
 
     if args.tfidf:
         histograms = tfidf.fit_transform(histograms).todense()
-        joblib.dump(tfidf, 'classifiers/tfidf.pkl') 
+        joblib.dump(tfidf, 'classifiers/tfidf.pkl')
+
+    if args.do_separate:
+        K = chi2_kernel(histograms, gamma=.5)                
+        dist = DistanceMetric.get_metric(mydist)        
+
+                
+        #clf_x_coord = xgb.XGBRegressor(**arguments)
+        #clf_y_coord = xgb.XGBRegressor(**arguments)
+        #clf_x_coord = svm.LinearSVR(epsilon=0)
+        #clf_y_coord = svm.LinearSVR(epsilon=0)
+        #clf_x_coord = RandomForestRegressor(2000, n_jobs=-1)
+        #clf_y_coord = RandomForestRegressor(2000, n_jobs=-1)
+        #clf_x_coord = GradientBoostingRegressor()
+        #clf_y_coord = GradientBoostingRegressor()
+        #clf_x_coord = GaussianProcess(theta0=0.1, thetaL=.001, thetaU=1.)
+        #clf_y_coord = GaussianProcess(theta0=0.1, thetaL=.001, thetaU=1.)
+        #clf_x_coord = KNeighborsRegressor(metric=chi2_kernel)
+        #clf_y_coord = KNeighborsRegressor(metric=chi2_kernel)                
+        clf_x_coord = MLPRegressor(learning_rate='adaptive', max_iter=1500, activation='logistic')
+        clf_y_coord = MLPRegressor(learning_rate='adaptive', max_iter=1500, activation='logistic')
+                        
+    
+    else:
+        clf0 = RandomForestRegressor(500, n_jobs=-1)
+        clf1 = RandomForestRegressor(500, n_jobs=-1)
+        #clf0 = GaussianProcess(theta0=0.1, thetaL=.001, thetaU=1.)
+        #clf1 = GaussianProcess(theta0=0.1, thetaL=.001, thetaU=1.)
+        #clf0 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=11)
+        #clf0 = KNeighborsRegressor(weights='uniform', n_neighbors=7, p=3)
+        #clf1 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=9)
+        clfs = [clf0, clf1]
+        
+        
 
     if args.do_separate:
         print("Fitting")

@@ -26,6 +26,23 @@ from treXtonConfig import parser
 args = parser.parse_args()
 mymap = args.mymap
 
+def mydist(x,y):
+    if x[0] == y[0]:
+        return 0
+    else:
+        return 1
+
+
+def pred_ints(model, X, percentile=95):
+    err_down = []
+    err_up = []
+    for x in range(len(X)):
+        preds = []
+        for pred in model.estimators_:
+            preds.append(pred.predict(X[x])[0])
+        err_down.append(np.percentile(preds, (100 - percentile) / 2. ))
+        err_up.append(np.percentile(preds, 100 - (100 - percentile) / 2.))
+    return err_down, err_up
 
 def init_tracker():
     tracker = KalmanFilter(dim_x=4, dim_z=2)
@@ -172,17 +189,28 @@ def main():
             pred_x = clf_x.predict([histogram])
             pred_y = clf_y.predict([histogram])
             pred  = np.array([(pred_x[0], pred_y[0])])
+            #err_down, err_up = pred_ints(clf_x, [histogram], percentile=75)
+            #print(err_down)
+            #print(pred[0][0])
+            #print(err_up)
+            #print("")
+            
         else:
-            for clf in clfs:
+            for i, clf in enumerate(clfs):
+                print(i)
                 pred = clf.predict([histogram])
+                err_down, err_up = pred_ints(clf, [histogram], percentile=90)
+                print(err_down)
+                print(err_up)
+                print("")
                 preds.append(pred)
 
             pred = np.mean(preds, axis=0)
 
-        if args.filter:
-            my_filter.update(pred.T)
-            filtered_pred = (my_filter.x[0][0], my_filter.x[2][0])
-            my_filter.predict()
+#        if args.filter:
+#            my_filter.update(pred.T)
+#            filtered_pred = (my_filter.x[0][0], my_filter.x[2][0])
+#            my_filter.predict()
 
 
         #print("Ground truth (x, y)", xs_opti[i], ys_opti[i])
