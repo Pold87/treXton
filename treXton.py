@@ -309,10 +309,6 @@ def img_to_texton_histogram(img, classifier, max_textons, n_clusters, weights, a
     histogram = np.bincount(clusters,
                             minlength=n_clusters) # minlength guarantees that missing clusters are set to 0
 
-#    histogram[73] = 0
-
-#    print("Amount textons:", len(textons) - twentysixer)
-
     #weights = len(textons) / args.max_textons
                             
     #if weights is not None:
@@ -486,24 +482,24 @@ def train_classifier_draug(path,
         joblib.dump(tfidf, 'classifiers/tfidf.pkl')
 
     if args.do_separate:
-        K = chi2_kernel(histograms, gamma=.5)                
-        dist = DistanceMetric.get_metric(mydist)        
+        #K = chi2_kernel(histograms, gamma=.5)                
+        #dist = DistanceMetric.get_metric(mydist)        
 
                 
         #clf_x_coord = xgb.XGBRegressor(**arguments)
         #clf_y_coord = xgb.XGBRegressor(**arguments)
         #clf_x_coord = svm.LinearSVR(epsilon=0)
         #clf_y_coord = svm.LinearSVR(epsilon=0)
-        #clf_x_coord = RandomForestRegressor(2000, n_jobs=-1)
-        #clf_y_coord = RandomForestRegressor(2000, n_jobs=-1)
+        clf_x_coord = RandomForestRegressor(1000, n_jobs=-1)
+        clf_y_coord = RandomForestRegressor(1000, n_jobs=-1)
         #clf_x_coord = GradientBoostingRegressor()
         #clf_y_coord = GradientBoostingRegressor()
         #clf_x_coord = GaussianProcess(theta0=0.1, thetaL=.001, thetaU=1.)
         #clf_y_coord = GaussianProcess(theta0=0.1, thetaL=.001, thetaU=1.)
         #clf_x_coord = KNeighborsRegressor(metric=chi2_kernel)
         #clf_y_coord = KNeighborsRegressor(metric=chi2_kernel)                
-        clf_x_coord = MLPRegressor(learning_rate='adaptive', max_iter=1500, activation='logistic')
-        clf_y_coord = MLPRegressor(learning_rate='adaptive', max_iter=1500, activation='logistic')
+        #clf_x_coord = MLPRegressor(learning_rate='adaptive', max_iter=1500, activation='logistic')
+        #clf_y_coord = MLPRegressor(learning_rate='adaptive', max_iter=1500, activation='logistic')
                         
     
     else:

@@ -36,12 +36,11 @@ def mydist(x,y):
 def pred_ints(model, X, percentile=95):
     err_down = []
     err_up = []
-    for x in range(len(X)):
-        preds = []
-        for pred in model.estimators_:
-            preds.append(pred.predict(X[x])[0])
-        err_down.append(np.percentile(preds, (100 - percentile) / 2. ))
-        err_up.append(np.percentile(preds, 100 - (100 - percentile) / 2.))
+    preds = []
+    for pred in model.estimators_:
+        preds.append(pred.predict(X)[0])
+    err_down = np.percentile(preds, (100 - percentile) / 2. )
+    err_up = np.percentile(preds, 100 - (100 - percentile) / 2.)
     return err_down, err_up
 
 def init_tracker():
@@ -108,7 +107,7 @@ def main():
     tfidf = joblib.load('classifiers/tfidf.pkl') 
         
     path = args.test_imgs_path
-    labels = pd.read_csv("../datasets/imgs/sift_targets.csv", index_col=0)
+    labels = pd.read_csv("../orthomap/imgs/sift_targets.csv", index_col=0)
 
     if args.standardize:
         mean, stdv = np.load("mean_stdv.npy")
@@ -180,14 +179,14 @@ def main():
              
 
         if args.tfidf:
-            histogram = tfidf.transform([histogram]).todense()
+            histogram = tfidf.transform(histogram.reshape(1, -1)).todense()
             histogram = np.ravel(histogram)
 
         
         preds = []
         if args.do_separate:
-            pred_x = clf_x.predict([histogram])
-            pred_y = clf_y.predict([histogram])
+            pred_x = clf_x.predict(histogram.reshape(1, -1))
+            pred_y = clf_y.predict(histogram.reshape(1, -1))
             pred  = np.array([(pred_x[0], pred_y[0])])
             #err_down, err_up = pred_ints(clf_x, [histogram], percentile=75)
             #print(err_down)
@@ -198,8 +197,8 @@ def main():
         else:
             for i, clf in enumerate(clfs):
                 print(i)
-                pred = clf.predict([histogram])
-                err_down, err_up = pred_ints(clf, [histogram], percentile=90)
+                pred = clf.predict(histogram.reshape(1, -1))
+                err_down, err_up = pred_ints(clf, histogram.reshape(1, -1), percentile=90)
                 print(err_down)
                 print(err_up)
                 print("")

@@ -33,6 +33,17 @@ sns.set(style='ticks', palette='Set1')
 args = parser.parse_args()
 mymap = args.mymap
 
+def pred_ints(model, X, percentile=60):
+    err_down = []
+    err_up = []
+    preds = []
+    for pred in model.estimators_:
+        preds.append(pred.predict(X)[0])
+    err_down = np.percentile(preds, (100 - percentile) / 2. )
+    err_up = np.percentile(preds, 100 - (100 - percentile) / 2.)
+    return err_down, err_up
+
+
 def init_tracker():
     tracker = KalmanFilter(dim_x=4, dim_z=2)
     dt = 1.0   # time step
@@ -268,6 +279,13 @@ def show_graphs(v, f):
         if args.do_separate:
             pred_x = clf_x.predict([histogram])
             pred_y = clf_y.predict([histogram])
+
+            err_down_x, err_up_x = pred_ints(clf_x, [histogram])
+            err_down_y, err_up_y = pred_ints(clf_y, [histogram])
+
+            err_x = pred_x - err_down_x
+            err_y = pred_y - err_down_y
+
             pred = np.array([[pred_x[0], pred_y[0]]])
             #print("pred x is", pred_x)
             #print("classifier is", clf_x)
@@ -342,13 +360,21 @@ def show_graphs(v, f):
         else:
             img_artist.set_data(pic[:,:,0])
             if args.use_sift: sift_drone_artist.remove()
-            if args.use_normal: drone_artist.remove()
+            if args.use_normal:
+                drone_artist.remove()
+                ebars[0].remove()
+                for line in ebars[1]:
+                    line.remove()
+                for line in ebars[2]:
+                    line.remove()
             if args.filter: filtered_drone_artist.remove()
             
             for rect, h in zip(histo_bar, histogram):
                 rect.set_height(h)
     
-        if args.use_normal: drone_artist = ax.add_artist(ab)
+        if args.use_normal:
+            drone_artist = ax.add_artist(ab)
+            ebars = ax.errorbar(xy[0], xy[1], xerr=err_x, yerr=err_y, ecolor='b')
         if args.filter: filtered_drone_artist = ax.add_artist(filtered_ab)
         if args.use_sift: sift_drone_artist = ax.add_artist(sift_ab)
 

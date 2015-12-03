@@ -41,7 +41,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--mymap", default="map.jpg", help="Path to the mat image")
+    parser.add_argument("-m", "--mymap", default="../draug/img/bestnewmat.png", help="Path to the mat image")
     parser.add_argument("-b", "--basedir", default="imgs/", help="Path to the images")
     parser.add_argument("-s", "--num_pics", default=2000, help="Amount of pictures", type=int)
     args = parser.parse_args()
