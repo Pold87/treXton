@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -5,6 +7,7 @@ import matplotlib.animation as animation
 import math
 import scipy
 import cv2
+import warnings
 from matplotlib.cbook import get_sample_data
 import matplotlib.image as mpimg
 from matplotlib.offsetbox import TextArea, DrawingArea, OffsetImage, \
@@ -16,22 +19,12 @@ from sklearn.externals import joblib
 from filterpy.kalman import KalmanFilter
 from filterpy.common import Q_discrete_white_noise
 from scipy.linalg import block_diag
-
+import pickle
 import thread
 import time
 import threading
 from treXton import img_to_texton_histogram, RGB2Opponent, imread_opponent
 from treXtonConfig import parser
-
-args = parser.parse_args()
-mymap = args.mymap
-
-def mydist(x,y):
-    if x[0] == y[0]:
-        return 0
-    else:
-        return 1
-
 
 def pred_ints(model, X, percentile=95):
     err_down = []
@@ -82,7 +75,9 @@ def rotate_coordinates(xs, ys, theta):
 
     return xs_new, ys_new
 
-def main():
+def validate(args):
+
+    print("num textons", args.num_textons)
 
 
     # Load k-means
@@ -107,7 +102,7 @@ def main():
     tfidf = joblib.load('classifiers/tfidf.pkl') 
         
     path = args.test_imgs_path
-    labels = pd.read_csv("../orthomap/imgs/sift_targets.csv", index_col=0)
+    labels = pd.read_csv("../datasets/imgs/sift_targets.csv", index_col=0)
 
     if args.standardize:
         mean, stdv = np.load("mean_stdv.npy")
@@ -119,8 +114,6 @@ def main():
     if test_on_the_fly:
         xs = []
         ys = []
-
-
         
     errors = []
     errors_x = []
@@ -228,18 +221,27 @@ def main():
         ground_truth =  (labels.x[i], labels.y[i])
         diff =  np.subtract(ground_truth, xy)
         abs_diff = np.fabs(diff)
-        errors_x.append(abs_diff[0])
-        errors_y.append(abs_diff[1])
+        errors_x.append(abs_diff[0] ** 2)
+        errors_y.append(abs_diff[1] ** 2)
         error = np.linalg.norm(abs_diff)
-        errors.append(error)
+        errors.append(error ** 2)
                 
-          
-    print("errors", np.mean(errors))
-    print("errors x", np.mean(errors_x))
-    print("errors y", np.mean(errors_y))
-         
+    val_errors = np.mean(errors)
+    val_errors_x = np.mean(errors_x)
+    val_errors_y = np.mean(errors_y)
+    print("errors", val_errors)
+    print("errors x", val_errors_x)
+    print("errors y", val_errors_y)
 
+    all_errors = np.array([val_errors,
+                           val_errors_x,
+                           val_errors_y])
+    
+    np.save("all_errors.npy", all_errors)
+
+    return val_errors, val_errors_x, val_errors_y
         
 
 if __name__ == "__main__":
-    main()
+    args = parser.parse_args()
+    validate(args)

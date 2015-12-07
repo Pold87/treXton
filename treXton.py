@@ -12,7 +12,7 @@ from sklearn.cluster import KMeans
 from sklearn.neighbors import NearestNeighbors, KNeighborsClassifier
 from sklearn.neighbors import LSHForest, DistanceMetric
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
-from sklearn.gaussian_process import GaussianProcess
+from sklearn.gaussian_process import GaussianProcessRegressor
 from collections import Counter
 from scipy.spatial import distance
 import texton_helpers
@@ -22,6 +22,7 @@ import heatmap
 import time
 import sys
 import math
+import warnings
 from scipy import stats
 from math import log, sqrt
 from scipy import spatial
@@ -40,6 +41,11 @@ from sklearn.neural_network import MLPRegressor
 from sknn.mlp import Regressor, Layer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler
+import pickle
+
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 tfidf = TfidfTransformer()
 
 def RGB2Opponent(img):
@@ -114,8 +120,8 @@ def extract_textons_from_path(path, max_textons=100, channel=0):
     img_vars_per_channel = []
 
     start = 0
-    stop = 85
-    step = 1
+    stop = 1000
+    step = 30
 
     for pic_num in range(start, stop, step):
 
@@ -124,7 +130,6 @@ def extract_textons_from_path(path, max_textons=100, channel=0):
             genimg_file = path + str(pic_num) + "_0.png"
         else:
             genimg_file = path + str(pic_num) + ".png"
-        print(genimg_file)
         
         genimg = imread_opponent(genimg_file)
         genimg = genimg[:, :, channel]
@@ -203,7 +208,7 @@ def extract_textons_from_path(path, max_textons=100, channel=0):
     return all_patches
 
     
-def train_and_cluster_textons(textons, n_clusters=25):
+def train_and_cluster_textons(textons, n_clusters=25, channel=0):
 
     """
     Returns a classifier, learned from the orignal image, and the
@@ -222,7 +227,7 @@ def train_and_cluster_textons(textons, n_clusters=25):
     centers = k_means.cluster_centers_
 
     if args.show_graphs:
-        display_textons(centers)
+        display_textons(centers, channel)
 
     return k_means, predictions, centers
 
@@ -263,7 +268,7 @@ def match_histograms(query_histogram, location_histogram, weights=None):
     return dist
     
 
-def display_textons(textons, input_is_1D=False, save=True):
+def display_textons(textons, channel=0, input_is_1D=False, save=True):
 
     """
     This function displays the input textons 
@@ -286,8 +291,8 @@ def display_textons(textons, input_is_1D=False, save=True):
                    cmap = cm.Greys_r, 
                    interpolation="nearest")
     
-    plt.savefig("extract_textons.png")
-    plt.show()
+    plt.savefig("extracted_textons_" + str(channel) + ".png")
+    #plt.show()
 
 
 
@@ -300,7 +305,7 @@ def display_histogram(histogram):
 def img_to_texton_histogram(img, classifier, max_textons, n_clusters, weights, args, channel):
 
     # Extract all textons of the query image
-    textons = extract_textons(img, max_textons, args, 1000, channel)
+    textons = extract_textons(img, max_textons, args, int(max_textons * 1.5), channel)
 
     # Get classes of textons of the query image
     clusters = cluster_textons(textons, classifier)
@@ -360,7 +365,7 @@ def train_classifier_draug(path,
 
             # Apply k-Means on the training image
             classifier, training_clusters, centers = train_and_cluster_textons(textons=training_textons, 
-                                                                           n_clusters=n_clusters)
+                                                                           n_clusters=n_clusters, channel=channel)
 
             classifiers.append(classifier)
             
@@ -482,26 +487,30 @@ def train_classifier_draug(path,
         joblib.dump(tfidf, 'classifiers/tfidf.pkl')
 
     if args.do_separate:
-        #K = chi2_kernel(histograms, gamma=.5)                
-        #dist = DistanceMetric.get_metric(mydist)        
+        if args.load_clf_settings:
+            clf_x_coord = pickle.load(open("hyperopt_clf_x.p", "rb" ))
+            clf_y_coord = pickle.load(open("hyperopt_clf_y.p", "rb" ))
+        else:
+            #K = chi2_kernel(histograms, gamma=.5)                
+            #dist = DistanceMetric.get_metric(mydist)        
 
-                
-        #clf_x_coord = xgb.XGBRegressor(**arguments)
-        #clf_y_coord = xgb.XGBRegressor(**arguments)
-        #clf_x_coord = svm.LinearSVR(epsilon=0)
-        #clf_y_coord = svm.LinearSVR(epsilon=0)
-        clf_x_coord = RandomForestRegressor(1000, n_jobs=-1)
-        clf_y_coord = RandomForestRegressor(1000, n_jobs=-1)
-        #clf_x_coord = GradientBoostingRegressor()
-        #clf_y_coord = GradientBoostingRegressor()
-        #clf_x_coord = GaussianProcess(theta0=0.1, thetaL=.001, thetaU=1.)
-        #clf_y_coord = GaussianProcess(theta0=0.1, thetaL=.001, thetaU=1.)
-        #clf_x_coord = KNeighborsRegressor(metric=chi2_kernel)
-        #clf_y_coord = KNeighborsRegressor(metric=chi2_kernel)                
-        #clf_x_coord = MLPRegressor(learning_rate='adaptive', max_iter=1500, activation='logistic')
-        #clf_y_coord = MLPRegressor(learning_rate='adaptive', max_iter=1500, activation='logistic')
-                        
-    
+
+            #clf_x_coord = xgb.XGBRegressor(**arguments)
+            #clf_y_coord = xgb.XGBRegressor(**arguments)
+            #clf_x_coord = svm.LinearSVR(epsilon=0)
+            #clf_y_coord = svm.LinearSVR(epsilon=0)
+            #clf_x_coord = RandomForestRegressor(1000, n_jobs=-1)
+            #clf_y_coord = RandomForestRegressor(1000, n_jobs=-1)
+            #clf_x_coord = GradientBoostingRegressor()
+            #clf_y_coord = GradientBoostingRegressor()
+            #clf_x_coord = GaussianProcessRegressor()
+            #clf_y_coord = GaussianProcessRegressor()
+            clf_x_coord = KNeighborsRegressor()
+            clf_y_coord = KNeighborsRegressor()                
+            #clf_x_coord = MLPRegressor(learning_rate='adaptive', max_iter=1500, activation='logistic')
+            #clf_y_coord = MLPRegressor(learning_rate='adaptive', max_iter=1500, activation='logistic')
+
+
     else:
         clf0 = RandomForestRegressor(500, n_jobs=-1)
         clf1 = RandomForestRegressor(500, n_jobs=-1)
