@@ -59,6 +59,7 @@ def RGB2Opponent(img):
     img = img.astype(np.float32)
 
     prod = pbcvt.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
+    #prod = np.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
     
     return prod
 
@@ -86,25 +87,28 @@ def extract_textons(img, max_textons, args, real_max_textons, channel):
         mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
         new_zero = - mean / stdv
 
-    if args.local_standardize:
+    #if args.local_standardize:
         
-        mymean = np.mean(np.ravel(img))
-        mystdv = np.std(np.ravel(img))
+    #    mymean = np.mean(np.ravel(img))
+    #    mystdv = np.std(np.ravel(img))
 
-        new_zero = - mymean / mystdv        
+    #    new_zero = - mymean / mystdv        
 
     counter = 0
-    for patch in patches:
-        #if not all(patch == patch[0]):
-        
-        if not all(patch == new_zero) or not all(patch == 0):
-            new_patches.append(patch)
-            counter += 1
-        if counter == max_textons: break
+    if args.resample_textons:
+        for patch in patches:
+            #if not all(patch == patch[0]):
 
-    if len(new_patches) == 0:
-        new_patches.append(patches[0])
+            if not all(patch == new_zero) or not all(patch == 0):
+                new_patches.append(patch)
+                counter += 1
+            if counter == max_textons: break
 
+        if len(new_patches) == 0:
+            new_patches.append(patches[0])
+    else:
+        new_patches = patches
+            
     return new_patches
 
 
@@ -321,11 +325,25 @@ def display_histogram(histogram):
 def img_to_texton_histogram(img, classifier, max_textons, n_clusters, weights, args, channel):
 
     # Extract all textons of the query image
-    textons = extract_textons(img, max_textons, args, int(max_textons * 1.5), channel)
+    if args.resample_textons:
+        total_textons = int(max_textons * 1.5)
+    else:
+        total_textons = int(max_textons)
+
+    start_extraction = time.time()
+    textons = extract_textons(img, max_textons, args, total_textons, channel)
+    end_extraction = time.time()
+    if args.measure_time:        
+        print("extraction", end_extraction - start_extraction)        
 
     # Get classes of textons of the query image
+    start_clustering = time.time()    
     clusters = cluster_textons(textons, classifier)
+    end_clustering = time.time()    
+    if args.measure_time:        
+        print("clustering", end_clustering - start_clustering)        
 
+        
     # Get the frequency of each texton class of the query image
     histogram = np.bincount(clusters,
                             minlength=n_clusters) # minlength guarantees that missing clusters are set to 0
@@ -343,10 +361,10 @@ def imread_opponent(path):
     img = plt.imread(path, 1)
 
     # Convert to opponent space
-    start = time.time()
+    #start = time.time()
     img = RGB2Opponent(img)
-    end = time.time()
-    print("Time convert", end - start)
+    #end = time.time()
+    #print("Time convert", end - start)
 
     return img
 
@@ -533,8 +551,10 @@ def train_classifier_draug(path,
             #clf_y_coord = GradientBoostingRegressor()
             #clf_x_coord = GaussianProcessRegressor()
             #clf_y_coord = GaussianProcessRegressor()
-            clf_x_coord = KNeighborsRegressor()
-            clf_y_coord = KNeighborsRegressor()                
+            #clf_x_coord = KNeighborsRegressor()
+            #clf_y_coord = KNeighborsRegressor()
+            clf_x_coord = LinearRegression()
+            clf_y_coord = LinearRegression()                
             #clf_x_coord = MLPRegressor()
             #clf_y_coord = MLPRegressor()
 

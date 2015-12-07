@@ -27,6 +27,7 @@ import configargparse
 import treXtonConfig
 import seaborn as sns
 from treXtonConfig import parser
+import time
 
 sns.set(style='ticks', palette='Set1')
 
@@ -211,6 +212,8 @@ def show_graphs(v, f):
 
     while True:
 
+        start = time.time()
+
         while v.value != 0:
             pass
 
@@ -233,17 +236,16 @@ def show_graphs(v, f):
                 pic[:, :, channel] = pic[:, :, channel] / stdv
 
         if args.local_standardize:
-            for channel in range(args.channels):
 
-                mymean = np.mean(np.ravel(pic[:, :, channel]))
-                mystdv = np.std(np.ravel(pic[:, :, channel]))
+            mymean, mystdv = cv2.meanStdDev(pic)
+            mymean = mymean.reshape(-1)
+            mystdv = mystdv.reshape(-1)
 
-                pic[:, :, channel] = pic[:, :, channel] - mymean
-                pic[:, :, channel] = pic[:, :, channel] / mystdv
-
+            pic = (pic - mymean) / mystdv         
+            
 
         # Get texton histogram of picture
-        query_histograms = []
+        query_histograms = np.empty((args.channels, args.num_textons))
 
         if args.color_standardize:
 
@@ -264,20 +266,20 @@ def show_graphs(v, f):
                                                     1,
                                                     args,
                                                     channel)
-            query_histograms.append(histogram)
+            query_histograms[channel] = histogram
+
+        query_histograms = query_histograms.reshape(1, args.num_textons * args.channels)            
                              
-        histogram = np.ravel(query_histograms)             
-             
 
         if args.tfidf:
-            histogram = tfidf.transform([histogram]).todense()
+            query_histograms = tfidf.transform(query_histograms).todense()
             histogram = np.ravel(histogram)
 
 
         preds = []
         if args.do_separate:
-            pred_x = clf_x.predict(histogram.reshape(1, -1))
-            pred_y = clf_y.predict(histogram.reshape(1, -1))
+            pred_x = clf_x.predict(query_histograms)
+            pred_y = clf_y.predict(query_histograms)
 
             #err_down_x, err_up_x = pred_ints(clf_x, [histogram])
             #err_down_y, err_up_y = pred_ints(clf_y, [histogram])
@@ -291,7 +293,7 @@ def show_graphs(v, f):
             xy = (pred_x[0], pred_y[0])
         else:
             for clf in clfs:
-                pred = clf.predict(histogram.reshape(1, -1))
+                pred = clf.predict(query_histograms)
                 #print "Pred is",  pred
                 preds.append(pred)
 
@@ -299,7 +301,8 @@ def show_graphs(v, f):
                 #print "Averaged pred is", pred
             xy = (pred[0][0], pred[0][1])
 
-        print(xy)
+        # Pritn prediction that is used for plotting
+        #print(xy)
 
         if args.use_sift:
             #sift_loc = rel.calcLocationFromPath(img_path)
@@ -353,8 +356,11 @@ def show_graphs(v, f):
                                 pad=0.0,
                                 frameon=False)
 
+        
         if i == 0:
-            histo_bar = ax_opti.bar(np.arange(len(histogram)), histogram)
+            if args.show_histogram:
+                query_flat = np.ravel(query_histograms)                
+                histo_bar = ax_opti.bar(np.arange(len(query_flat)), query_flat)
             img_artist = ax_inflight.imshow(pic[:,:,0])
         else:
             img_artist.set_data(pic[:,:,0])
@@ -367,9 +373,11 @@ def show_graphs(v, f):
                 #for line in ebars[2]:
                 #    line.remove()
             if args.filter: filtered_drone_artist.remove()
-            
-            for rect, h in zip(histo_bar, histogram):
-                rect.set_height(h)
+
+            if args.show_histogram:
+                query_flat = np.ravel(query_histograms)
+                for rect, h in zip(histo_bar, query_flat):
+                    rect.set_height(h)
     
         if args.use_normal:
             drone_artist = ax.add_artist(ab)
@@ -377,7 +385,7 @@ def show_graphs(v, f):
         if args.filter: filtered_drone_artist = ax.add_artist(filtered_ab)
         if args.use_sift: sift_drone_artist = ax.add_artist(sift_ab)
 
-        plt.pause(.5)
+        plt.pause(1e-10)
             
         i += 1
         

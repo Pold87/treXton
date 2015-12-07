@@ -38,6 +38,9 @@ parser.add_argument("-un", "--use_normal", default=False, help="Use normal drone
 parser.add_argument("-ug", "--use_ground_truth", default=False, help="Use SIFT from OpenCV to display its estimation", action="store_true")
 parser.add_argument("--load_histograms", default=False, help="Load previously saved histograms", action="store_true")
 parser.add_argument("--load_clf_settings", default=False, help="Load previously saved classifier", action="store_true")
+parser.add_argument("--measure_time", default=False, help="Measure the time of single functions", action="store_true")
+parser.add_argument("--resample_textons", default=False, help="Resample textons if they are totally black", action="store_true")
+parser.add_argument("--show_histogram", default=False, help="Show histogram in visualization mode", action="store_true")
 
 if __name__ == "__main__":
    args = parser.parse_known_args()

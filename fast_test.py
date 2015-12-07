@@ -77,8 +77,6 @@ def rotate_coordinates(xs, ys, theta):
 
 def validate(args):
 
-    print("num textons", args.num_textons)
-
     # Load k-means
 
     kmeans = []
@@ -101,7 +99,10 @@ def validate(args):
     tfidf = joblib.load('classifiers/tfidf.pkl') 
         
     path = args.test_imgs_path
-    labels = pd.read_csv("../orthomap/imgs/sift_targets.csv", index_col=0)
+    # Laptop
+    # labels = pd.read_csv("../orthomap/imgs/sift_targets.csv", index_col=0)
+    # PC
+    labels = pd.read_csv("../datasets/imgs/sift_targets.csv", index_col=0)    
 
     if args.standardize:
         mean, stdv = np.load("mean_stdv.npy")
@@ -123,8 +124,12 @@ def validate(args):
     for i in labels.index:
         start = time.time()
         img_path = path + str(i) + ".png"
+        start_reading = time.time()                        
         pic = imread_opponent(img_path)
-
+        end_reading = time.time()
+        if args.measure_time:        
+            print("reading", end_reading - start_reading)        
+        
 
         if args.color_standardize:
 
@@ -141,12 +146,17 @@ def validate(args):
         start_ls = time.time()
         if args.local_standardize:
 
-            mymeans = np.mean(pic, axis=(0, 1))
-            mystdvs = np.std(pic, axis=(0, 1))
-
+            mymeans, mystdvs = cv2.meanStdDev(pic)
+            mymeans = mymeans.reshape(-1)
+            mystdvs = mystdvs.reshape(-1)            
+            
+            #mymeans = np.mean(pic, axis=(0, 1))
+            #mystdvs = np.std(pic, axis=(0, 1))
+            
             pic = (pic - mymeans) / mystdvs
         end_ls = time.time()            
-        print("local standardize", int(1000 * (end_ls - start_ls)))        
+        if args.measure_time:
+            print("local standardize", int(1000 * (end_ls - start_ls)))        
             
         if args.histogram_standardize:
             # create a CLAHE object (Arguments are optional)self.
@@ -164,7 +174,7 @@ def validate(args):
             
 
         # Get texton histogram of picture
-        query_histograms = []
+        query_histograms = np.empty((args.channels, args.num_textons))
 
         start_histo = time.time()
                 
@@ -176,25 +186,25 @@ def validate(args):
                                                     1,
                                                     args,
                                                     channel)
-            query_histograms.append(histogram)
+            query_histograms[channel] = histogram
 
         end_histo = time.time()
-        print("histograms", end_histo - start_histo)
+        if args.measure_time:
+            print("histograms", end_histo - start_histo)
             
-        histogram = np.ravel(query_histograms)             
-             
-
         start_tfidf = time.time()
         if args.tfidf:
-            histogram = tfidf.transform(histogram.reshape(1, -1)).todense()
+            histogram = tfidf.transform(query_histograms.reshape(1, args.num_textons * args.channels)).todense()
             histogram = np.ravel(histogram)
         end_tfidf = time.time()
-        print("tfidf", end_tfidf - start_tfidf)        
+        if args.measure_time:        
+            print("tfidf", end_tfidf - start_tfidf)        
         
         preds = []
+        start_prediction = time.time()        
         if args.do_separate:
-            pred_x = clf_x.predict(histogram.reshape(1, -1))
-            pred_y = clf_y.predict(histogram.reshape(1, -1))
+            pred_x = clf_x.predict(histogram.reshape(1, args.num_textons * args.channels))
+            pred_y = clf_y.predict(histogram.reshape(1, args.num_textons * args.channels))
             pred  = np.array([(pred_x[0], pred_y[0])])
             #err_down, err_up = pred_ints(clf_x, [histogram], percentile=75)
             #print(err_down)
@@ -213,6 +223,10 @@ def validate(args):
                 preds.append(pred)
 
             pred = np.mean(preds, axis=0)
+        end_prediction = time.time()        
+        if args.measure_time:        
+            print("prediction (clf)", end_prediction - start_prediction)        
+            
 
 #        if args.filter:
 #            my_filter.update(pred.T)
@@ -232,7 +246,7 @@ def validate(args):
         else:
             xy = (xs[i], ys[i])
 
-
+        start_error_stats = time.time()                                
         ground_truth =  (labels.x[i], labels.y[i])
         diff =  np.subtract(ground_truth, xy)
         abs_diff = np.fabs(diff)
@@ -242,7 +256,12 @@ def validate(args):
         errors.append(error ** 2)
         end = time.time()
         times.append(end - start)
-                
+        end_error_stats = time.time()
+        if args.measure_time:        
+            print("error stats", end_error_stats - start_error_stats)        
+
+        
+
     val_errors = np.mean(errors)
     val_errors_x = np.mean(errors_x)
     val_errors_y = np.mean(errors_y)
@@ -259,6 +278,8 @@ def validate(args):
                            val_errors_y])
     
     np.save("all_errors.npy", all_errors)
+
+
 
     return val_errors, val_errors_x, val_errors_y
         
