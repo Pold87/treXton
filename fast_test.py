@@ -79,7 +79,6 @@ def validate(args):
 
     print("num textons", args.num_textons)
 
-
     # Load k-means
 
     kmeans = []
@@ -102,7 +101,7 @@ def validate(args):
     tfidf = joblib.load('classifiers/tfidf.pkl') 
         
     path = args.test_imgs_path
-    labels = pd.read_csv("../datasets/imgs/sift_targets.csv", index_col=0)
+    labels = pd.read_csv("../orthomap/imgs/sift_targets.csv", index_col=0)
 
     if args.standardize:
         mean, stdv = np.load("mean_stdv.npy")
@@ -119,8 +118,10 @@ def validate(args):
     errors_x = []
     errors_y = []
 
+    times = []
+    
     for i in labels.index:
-
+        start = time.time()
         img_path = path + str(i) + ".png"
         pic = imread_opponent(img_path)
 
@@ -137,16 +138,24 @@ def validate(args):
             pic[:, :, 2] = pic[:, :, 2] / mystdv
 
 
+        start_ls = time.time()
         if args.local_standardize:
+
+            mymeans = np.mean(pic, axis=(0, 1))
+            mystdvs = np.std(pic, axis=(0, 1))
+
+            pic = (pic - mymeans) / mystdvs
+        end_ls = time.time()            
+        print("local standardize", int(1000 * (end_ls - start_ls)))        
+            
+        if args.histogram_standardize:
+            # create a CLAHE object (Arguments are optional)self.
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
             for channel in range(args.channels):
 
-                mymean = np.mean(np.ravel(pic[:, :, channel]))
-                mystdv = np.std(np.ravel(pic[:, :, channel]))
-
-                pic[:, :, channel] = pic[:, :, channel] - mymean
-                pic[:, :, channel] = pic[:, :, channel] / mystdv
-
+                pic[:, :, channel] = clahe.apply(pic[:, :, channel])
             
+                
         if args.standardize:
             for channel in range(args.channels):
                 mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
@@ -157,6 +166,7 @@ def validate(args):
         # Get texton histogram of picture
         query_histograms = []
 
+        start_histo = time.time()
                 
         for channel in range(args.channels):
             histogram = img_to_texton_histogram(pic[:, :, channel],
@@ -167,14 +177,19 @@ def validate(args):
                                                     args,
                                                     channel)
             query_histograms.append(histogram)
-                             
+
+        end_histo = time.time()
+        print("histograms", end_histo - start_histo)
+            
         histogram = np.ravel(query_histograms)             
              
 
+        start_tfidf = time.time()
         if args.tfidf:
             histogram = tfidf.transform(histogram.reshape(1, -1)).todense()
             histogram = np.ravel(histogram)
-
+        end_tfidf = time.time()
+        print("tfidf", end_tfidf - start_tfidf)        
         
         preds = []
         if args.do_separate:
@@ -225,13 +240,19 @@ def validate(args):
         errors_y.append(abs_diff[1] ** 2)
         error = np.linalg.norm(abs_diff)
         errors.append(error ** 2)
+        end = time.time()
+        times.append(end - start)
                 
     val_errors = np.mean(errors)
     val_errors_x = np.mean(errors_x)
     val_errors_y = np.mean(errors_y)
-    print("errors", val_errors)
-    print("errors x", val_errors_x)
-    print("errors y", val_errors_y)
+    val_times = np.mean(times)
+    print("times", val_times)
+    print("frequency", int(1 / val_times))
+    
+    print("errors", np.sqrt(val_errors))
+    print("errors x", np.sqrt(val_errors_x))
+    print("errors y", np.sqrt(val_errors_y))
 
     all_errors = np.array([val_errors,
                            val_errors_x,

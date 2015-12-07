@@ -25,6 +25,8 @@ parser.add_argument("-std", "--standardize", default=False, help="Perform standa
 parser.add_argument("-ds", "--do_separate", default=False, help="Use two classifiers (x and y)", action="store_true")
 parser.add_argument("-udf", "--use_draug_folder", default=False, help="Use picture enhanced by draug (folder)", action="store_true")
 parser.add_argument("-cs", "--color_standardize", default=False, help="Standardize channel 2 and 3 by dividing them by channel 1", action="store_true")
+parser.add_argument("-hs", "--histogram_standardize", default=False, help="Standardize the (grayscale) picture using histogram equalization", action="store_true")
+parser.add_argument("-ud", "--use_dipoles", default=False, help="Standardize the (grayscale) picture using histogram equalization", action="store_true")
 parser.add_argument("-ls", "--local_standardize", default=False, help="Use local standardization", action="store_true")
 parser.add_argument("-gtl", "--ground_truth_labeler", help="Path of SIFT ground truth csv file")
 parser.add_argument("-m", "--mymap", default="../draug/img/bestnewmat.png", help="Path to the mat image")

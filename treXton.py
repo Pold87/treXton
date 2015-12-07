@@ -42,7 +42,10 @@ from sknn.mlp import Regressor, Layer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler
 import pickle
-
+from scipy.linalg import get_blas_funcs
+from scipy.linalg import blas as FB
+from sklearn.utils.extmath import fast_dot
+import pbcvt
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -52,9 +55,12 @@ def RGB2Opponent(img):
 
     A = np.array([[0.06, 0.63, 0.27],
                    [0.30, 0.04, -0.35],
-                   [0.34, -0.60, 0.17]])
+                   [0.34, -0.60, 0.17]]).astype(np.float32)
+    img = img.astype(np.float32)
 
-    return np.dot(img, A.T)
+    prod = pbcvt.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
+    
+    return prod
 
 def extract_textons(img, max_textons, args, real_max_textons, channel):
 
@@ -85,8 +91,7 @@ def extract_textons(img, max_textons, args, real_max_textons, channel):
         mymean = np.mean(np.ravel(img))
         mystdv = np.std(np.ravel(img))
 
-        new_zero = - mymean / mystdv
-
+        new_zero = - mymean / mystdv        
 
     counter = 0
     for patch in patches:
@@ -178,7 +183,6 @@ def extract_textons_from_path(path, max_textons=100, channel=0):
             else:
                 print("img_vars[k]", img_vars[k])
                 genimg = genimg / np.sqrt(img_vars[k])
-                print(genimg)
 
         if args.local_standardize:
 
@@ -188,6 +192,18 @@ def extract_textons_from_path(path, max_textons=100, channel=0):
             genimg = genimg - mymean
             genimg = genimg / mystdv
 
+
+        if args.histogram_standardize:
+
+            # create a CLAHE object (Arguments are optional).
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            genimg = clahe.apply(genimg)
+
+        if args.use_dipoles:
+            delta_x = cv2.Sobel(genimg, cv2.CV_64F, 1, 0, ksize=3)
+            invar = delta_x / genimg
+
+            # TODO: this function should get the entire image as inpit
 
         if args.standardize:
             mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
@@ -327,7 +343,10 @@ def imread_opponent(path):
     img = plt.imread(path, 1)
 
     # Convert to opponent space
+    start = time.time()
     img = RGB2Opponent(img)
+    end = time.time()
+    print("Time convert", end - start)
 
     return img
 
@@ -388,7 +407,8 @@ def train_classifier_draug(path,
     
 
     from sklearn.neighbors import KNeighborsRegressor
-    from sklearn.linear_model import LinearRegression 
+    from sklearn.linear_model import LinearRegression, Ridge
+    import sklearn.linear_model as lm
 #    rf_top_left = RandomForestRegressor(500, n_jobs=-1)
 #    rf_top_left = KNeighborsRegressor(p=1)
 
@@ -452,6 +472,14 @@ def train_classifier_draug(path,
                     query_image[:, :, 1] = query_image[:, :, 1] / mystdv
                     query_image[:, :, 2] = query_image[:, :, 2] / mystdv            
 
+                if args.histogram_standardize:
+
+                    # create a CLAHE object (Arguments are optional).
+                    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+                    for channel in range(args.channels):
+                        query_image[:, :, channel] = clahe.apply(query_image[:, :, channel])
+
+                                        
                 if args.standardize:
                     for channel in range(args.channels):
                         mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
@@ -493,22 +521,22 @@ def train_classifier_draug(path,
         else:
             #K = chi2_kernel(histograms, gamma=.5)                
             #dist = DistanceMetric.get_metric(mydist)        
-
-
+            #clf_x_coord = lm.TheilSenRegressor()
+            #clf_y_coord = lm.TheilSenRegressor()
             #clf_x_coord = xgb.XGBRegressor(**arguments)
             #clf_y_coord = xgb.XGBRegressor(**arguments)
             #clf_x_coord = svm.LinearSVR(epsilon=0)
             #clf_y_coord = svm.LinearSVR(epsilon=0)
-            #clf_x_coord = RandomForestRegressor(1000, n_jobs=-1)
-            #clf_y_coord = RandomForestRegressor(1000, n_jobs=-1)
+            #clf_x_coord = RandomForestRegressor(50, n_jobs=-1)
+            #clf_y_coord = RandomForestRegressor(50, n_jobs=-1)
             #clf_x_coord = GradientBoostingRegressor()
             #clf_y_coord = GradientBoostingRegressor()
             #clf_x_coord = GaussianProcessRegressor()
             #clf_y_coord = GaussianProcessRegressor()
             clf_x_coord = KNeighborsRegressor()
             clf_y_coord = KNeighborsRegressor()                
-            #clf_x_coord = MLPRegressor(learning_rate='adaptive', max_iter=1500, activation='logistic')
-            #clf_y_coord = MLPRegressor(learning_rate='adaptive', max_iter=1500, activation='logistic')
+            #clf_x_coord = MLPRegressor()
+            #clf_y_coord = MLPRegressor()
 
 
     else:
@@ -593,14 +621,14 @@ def main_draug(args):
             top_left_y = coordinates.ix[i, "y"]
             
             pred_top_left = rf_top_left.predict([histogram])
-            print "pred is", pred_top_left
-            print "real values", (top_left_x, top_left_y)
+            print ("pred is", pred_top_left)
+            print ("real values", (top_left_x, top_left_y))
 
             diff_x = abs(pred_top_left[0][0] - top_left_x)
             diff_y = abs(pred_top_left[0][1] - top_left_y)
             
-            print "diff x", diff_x
-            print "diff y", diff_y
+            print("diff x", diff_x)
+            print("diff y", diff_y)
 
             errors_x.append(diff_x)
             errors_y.append(diff_y)
@@ -625,14 +653,14 @@ def main_draug(args):
             top_left_y = coordinates.ix[i, "y"]
             
             pred_top_left = rf_top_left.predict([histogram])
-            print "pred is", pred_top_left
-            print "real values", (top_left_x, top_left_y)
+            print("pred is", pred_top_left)
+            print("real values", (top_left_x, top_left_y))
 
             diff_x = abs(pred_top_left[0][0] - top_left_x)
             diff_y = abs(pred_top_left[0][1] - top_left_y)
             
-            print "diff x", diff_x
-            print "diff y", diff_y
+            print("diff x", diff_x)
+            print("diff y", diff_y)
 
             errors_x.append(diff_x)
             errors_y.append(diff_y)
@@ -658,7 +686,7 @@ def main_draug(args):
                 display_histogram(histogram)
 
             pred_top_left = rf_top_left.predict([histogram])
-            print "pred is", pred_top_left
+            print("pred is", pred_top_left)
 
             predictions.append(pred_top_left[0])
 
