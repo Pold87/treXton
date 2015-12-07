@@ -245,11 +245,10 @@ def show_graphs(v, f):
         # Get texton histogram of picture
         query_histograms = []
 
-        mymean = np.mean(np.ravel(pic[:, :, 0]))
-        mystdv = np.std(np.ravel(pic[:, :, 0]))
-
-
         if args.color_standardize:
+
+            mymean = np.mean(np.ravel(pic[:, :, 0]))
+            mystdv = np.std(np.ravel(pic[:, :, 0]))
 
             pic[:, :, 0] = pic[:, :, 0] - mymean
             pic[:, :, 0] = pic[:, :, 0] / mystdv
@@ -277,14 +276,14 @@ def show_graphs(v, f):
 
         preds = []
         if args.do_separate:
-            pred_x = clf_x.predict([histogram])
-            pred_y = clf_y.predict([histogram])
+            pred_x = clf_x.predict(histogram.reshape(1, -1))
+            pred_y = clf_y.predict(histogram.reshape(1, -1))
 
-            err_down_x, err_up_x = pred_ints(clf_x, [histogram])
-            err_down_y, err_up_y = pred_ints(clf_y, [histogram])
+            #err_down_x, err_up_x = pred_ints(clf_x, [histogram])
+            #err_down_y, err_up_y = pred_ints(clf_y, [histogram])
 
-            err_x = pred_x - err_down_x
-            err_y = pred_y - err_down_y
+            #err_x = pred_x - err_down_x
+            #err_y = pred_y - err_down_y
 
             pred = np.array([[pred_x[0], pred_y[0]]])
             #print("pred x is", pred_x)
@@ -292,7 +291,7 @@ def show_graphs(v, f):
             xy = (pred_x[0], pred_y[0])
         else:
             for clf in clfs:
-                pred = clf.predict([histogram])
+                pred = clf.predict(histogram.reshape(1, -1))
                 #print "Pred is",  pred
                 preds.append(pred)
 
@@ -362,11 +361,11 @@ def show_graphs(v, f):
             if args.use_sift: sift_drone_artist.remove()
             if args.use_normal:
                 drone_artist.remove()
-                ebars[0].remove()
-                for line in ebars[1]:
-                    line.remove()
-                for line in ebars[2]:
-                    line.remove()
+                #ebars[0].remove()
+                #for line in ebars[1]:
+                #    line.remove()
+                #for line in ebars[2]:
+                #    line.remove()
             if args.filter: filtered_drone_artist.remove()
             
             for rect, h in zip(histo_bar, histogram):
@@ -374,7 +373,7 @@ def show_graphs(v, f):
     
         if args.use_normal:
             drone_artist = ax.add_artist(ab)
-            ebars = ax.errorbar(xy[0], xy[1], xerr=err_x, yerr=err_y, ecolor='b')
+            #ebars = ax.errorbar(xy[0], xy[1], xerr=err_x, yerr=err_y, ecolor='b')
         if args.filter: filtered_drone_artist = ax.add_artist(filtered_ab)
         if args.use_sift: sift_drone_artist = ax.add_artist(sift_ab)
 
