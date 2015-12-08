@@ -28,6 +28,7 @@ import treXtonConfig
 import seaborn as sns
 from treXtonConfig import parser
 import time
+import particle_filter as pf
 
 sns.set(style='ticks', palette='Set1')
 
@@ -210,13 +211,18 @@ def show_graphs(v, f):
         truth.set_index(['id'], inplace=True)
 
 
+    mydrone = pf.robot()
+    N = 20  # Number of particles
+    p = pf.init_particles(N)
+    dt = 1
+
     while True:
 
         start = time.time()
 
         while v.value != 0:
             pass
-
+        
         if args.mode == 0:
             # Capture frame-by-frame
             ret, pic = cap.read()
@@ -304,6 +310,11 @@ def show_graphs(v, f):
         # Pritn prediction that is used for plotting
         #print(xy)
 
+        p = pf.move_all(p, xy, dt)
+
+        # Get particle positions
+        plt_xs, plt_ys = pf.get_x_y(p)        
+
         if args.use_sift:
             #sift_loc = rel.calcLocationFromPath(img_path)
             #sift_loc[1] = y_width - sift_loc[1]
@@ -367,6 +378,7 @@ def show_graphs(v, f):
             if args.use_sift: sift_drone_artist.remove()
             if args.use_normal:
                 drone_artist.remove()
+                particle_plot.remove()
                 #ebars[0].remove()
                 #for line in ebars[1]:
                 #    line.remove()
@@ -381,12 +393,21 @@ def show_graphs(v, f):
     
         if args.use_normal:
             drone_artist = ax.add_artist(ab)
+            # Plot particle positions
+            particle_plot = ax.scatter(plt_xs, plt_ys)
+            #ax.add_artist(particle_plot)
+
             #ebars = ax.errorbar(xy[0], xy[1], xerr=err_x, yerr=err_y, ecolor='b')
         if args.filter: filtered_drone_artist = ax.add_artist(filtered_ab)
         if args.use_sift: sift_drone_artist = ax.add_artist(sift_ab)
 
         plt.pause(1e-10)
-            
+
+        # Particle filter
+        ws, w_sum = pf.get_weights(p, xy, dt, i)
+        new_p = pf.resample_wheel(p, ws, N)
+
+        
         i += 1
         
     else:

@@ -18,6 +18,8 @@ ys = [0, 200, 400, 600, 800, 1000, 1200, 1400, 1600, 0, 1800, 2000, 2200]
 
 
 def calc_dist(x, y):
+    print("x", x)
+    print("y", y)
     x_np = np.array(x)
     y_np = np.array(y)
     return np.linalg.norm(x_np - y_np)
@@ -65,8 +67,10 @@ class robot:
         self.speed_noise = float(new_v_noise);
     
     
-    def sense(self):
-        Z = np.array([xs[self.t], ys[self.t]])
+    def sense(self, xy):
+        Z = np.array([xy[0], xy[1]])
+
+        print(Z)
 
         # TODO: specify dt
         t = self.t # save
@@ -151,6 +155,8 @@ class robot:
         pred_y = self.y + (sin(self.orientation) * pred_forward)
         pred = np.array([pred_x, pred_y])
 
+        print("measurement", measurement)
+        
         dist = calc_dist(pred, measurement)
 
         prob *= self.Gaussian(pred_forward, self.sense_noise, dist)
@@ -173,10 +179,10 @@ def eval(r, p):
 def init_particles(num_particles):
     p = []
 
-    f_noise = 50
-    t_noise = 0.1
+    f_noise = 200
+    t_noise = 0.5
     s_noise = 200
-    v_noise = 1
+    v_noise = 10
 
     for i in range(num_particles):
         r = robot()
@@ -209,7 +215,7 @@ def init_particles(num_particles):
 #myrobot = myrobot.move(pi / 2., 10)
 #print myrobot.sense()
 
-def move_all(p, dt):
+def move_all(p, xy, dt):
 
     """
     Move all particles
@@ -217,15 +223,13 @@ def move_all(p, dt):
 
     ps = []
     for i in range(len(p)):
-        particle = p[i].sense()
+        particle = p[i].sense(xy)
         ps.append(particle)
 
     return ps
         
-        #new_p.append(p[i].move(x, y, dt))
-        
 
-def get_weights(p, dt, t):
+def get_weights(p, xy, dt, t):
     
     """
     Get fitness for a list of particles
@@ -234,8 +238,8 @@ def get_weights(p, dt, t):
     ws = []
     w_sum = 0
     for i in range(len(p)):
-#        w = p[i].measurement_prob(p[i].sense(), dt)
-        w = p[i].measurement_prob(np.array([xs[t], ys[t]]), dt)
+        w = p[i].measurement_prob(xy, dt)
+        #w = p[i].measurement_prob(np.array([xs[t], ys[t]]), dt)
         w_sum += w
         ws.append(w)
 
