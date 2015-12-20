@@ -1,0 +1,7 @@
+import cv2
+
+cap = cv2.VideoCapture(1)
+while True:
+    img = 
+    
+gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) numpy.max(cv2.convertScaleAbs(cv2.Laplacian(gray_image,3)))

@@ -18,8 +18,6 @@ ys = [0, 200, 400, 600, 800, 1000, 1200, 1400, 1600, 0, 1800, 2000, 2200]
 
 
 def calc_dist(x, y):
-    print("x", x)
-    print("y", y)
     x_np = np.array(x)
     y_np = np.array(y)
     return np.linalg.norm(x_np - y_np)
@@ -155,7 +153,7 @@ class robot:
         pred_y = self.y + (sin(self.orientation) * pred_forward)
         pred = np.array([pred_x, pred_y])
 
-        print("measurement", measurement)
+        #print("measurement", measurement)
         
         dist = calc_dist(pred, measurement)
 

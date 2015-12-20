@@ -29,11 +29,20 @@ import seaborn as sns
 from treXtonConfig import parser
 import time
 import particle_filter as pf
+import xgboost as xgb
 
 sns.set(style='ticks', palette='Set1')
 
 args = parser.parse_args()
 mymap = args.mymap
+
+def mydist(x, y):
+
+    x_norm = x / np.sum(x)
+    y_norm = y / np.sum(y)
+
+    return np.sum((x_norm - y_norm) ** 2 / (x_norm + y_norm)) / 2
+
 
 def pred_ints(model, X, percentile=60):
     err_down = []
@@ -163,7 +172,7 @@ def show_graphs(v, f):
     
         kmean = joblib.load('classifiers/kmeans' + str(channel) + '.pkl')
         kmeans.append(kmean)
-        
+
     # Load random forest
     if args.do_separate:
         clf_x = joblib.load('classifiers/clf_x.pkl')
@@ -210,11 +219,11 @@ def show_graphs(v, f):
         truth = pd.read_csv("../datasets/imgs/sift_targets.csv")
         truth.set_index(['id'], inplace=True)
 
-
-    mydrone = pf.robot()
-    N = 20  # Number of particles
-    p = pf.init_particles(N)
-    dt = 1
+    if args.use_particle_filter:
+        mydrone = pf.robot()
+        N = 80  # Number of particles
+        p = pf.init_particles(N)
+        dt = 1
 
     while True:
 
@@ -251,7 +260,7 @@ def show_graphs(v, f):
             
 
         # Get texton histogram of picture
-        query_histograms = np.empty((args.channels, args.num_textons))
+        query_histograms = np.zeros((args.channels, args.num_textons))
 
         if args.color_standardize:
 
@@ -263,18 +272,28 @@ def show_graphs(v, f):
             pic[:, :, 1] = pic[:, :, 1] / mystdv
             pic[:, :, 2] = pic[:, :, 2] / mystdv
 
-            
-        for channel in range(args.channels):
-            histogram = img_to_texton_histogram(pic[:, :, channel],
-                                                    kmeans[channel],
-                                                    args.max_textons,
-                                                    args.num_textons,
-                                                    1,
-                                                    args,
-                                                    channel)
-            query_histograms[channel] = histogram
+        if args.use_dipoles:
+            histogram = img_to_texton_histogram(pic,
+                                                kmeans[0],
+                                                args.max_textons,
+                                                args.num_textons,
+                                                1,
+                                                args,
+                                                0)
+            query_histograms = histogram.reshape(1, args.num_textons * 4)
+                
+        else:
+            for channel in range(args.channels):
+                histogram = img_to_texton_histogram(pic[:, :, channel],
+                                                        kmeans[channel],
+                                                        args.max_textons,
+                                                        args.num_textons,
+                                                        1,
+                                                        args,
+                                                        channel)
+                query_histograms[channel] = histogram
 
-        query_histograms = query_histograms.reshape(1, args.num_textons * args.channels)            
+            query_histograms = query_histograms.reshape(1, args.num_textons * args.channels)            
                              
 
         if args.tfidf:
@@ -284,8 +303,15 @@ def show_graphs(v, f):
 
         preds = []
         if args.do_separate:
-            pred_x = clf_x.predict(query_histograms)
-            pred_y = clf_y.predict(query_histograms)
+
+            if args.use_xgboost:
+                dtest = xgb.DMatrix(query_histograms)
+                pred_x = clf_x.predict(dtest)
+                pred_y = clf_y.predict(dtest)
+            else:                
+                pred_x = clf_x.predict(query_histograms)
+                pred_y = clf_y.predict(query_histograms)
+
 
             #err_down_x, err_up_x = pred_ints(clf_x, [histogram])
             #err_down_y, err_up_y = pred_ints(clf_y, [histogram])
@@ -308,20 +334,21 @@ def show_graphs(v, f):
             xy = (pred[0][0], pred[0][1])
 
         # Pritn prediction that is used for plotting
-        #print(xy)
+        print(xy)
 
-        p = pf.move_all(p, xy, dt)
 
         # Get particle positions
-        plt_xs, plt_ys = pf.get_x_y(p)        
+        if args.use_particle_filter:
+            p = pf.move_all(p, xy, dt)
+            plt_xs, plt_ys = pf.get_x_y(p)        
 
         if args.use_sift:
             #sift_loc = rel.calcLocationFromPath(img_path)
             #sift_loc[1] = y_width - sift_loc[1]
             #print(sift_loc)
             #sift_xy = tuple(sift_loc)
-            sift_x = truth.ix[i, "x"]
-            sift_y = truth.ix[i, "y"]
+            #sift_x = truth.ix[i, "x"]
+            #sift_y = truth.ix[i, "y"]
             sift_xy = (sift_x, sift_y)
 
             sift_ab = AnnotationBbox(sift_imagebox, sift_xy,
@@ -376,9 +403,10 @@ def show_graphs(v, f):
         else:
             img_artist.set_data(pic[:,:,0])
             if args.use_sift: sift_drone_artist.remove()
+            if args.use_particle_filter: particle_plot.remove()
             if args.use_normal:
                 drone_artist.remove()
-                particle_plot.remove()
+                
                 #ebars[0].remove()
                 #for line in ebars[1]:
                 #    line.remove()
@@ -390,11 +418,12 @@ def show_graphs(v, f):
                 query_flat = np.ravel(query_histograms)
                 for rect, h in zip(histo_bar, query_flat):
                     rect.set_height(h)
-    
+
+        if args.use_particle_filter:
+            particle_plot = ax.scatter(plt_xs, plt_ys)
         if args.use_normal:
             drone_artist = ax.add_artist(ab)
             # Plot particle positions
-            particle_plot = ax.scatter(plt_xs, plt_ys)
             #ax.add_artist(particle_plot)
 
             #ebars = ax.errorbar(xy[0], xy[1], xerr=err_x, yerr=err_y, ecolor='b')
@@ -404,8 +433,9 @@ def show_graphs(v, f):
         plt.pause(1e-10)
 
         # Particle filter
-        ws, w_sum = pf.get_weights(p, xy, dt, i)
-        new_p = pf.resample_wheel(p, ws, N)
+        if args.use_particle_filter:
+            ws, w_sum = pf.get_weights(p, xy, dt, i)
+            new_p = pf.resample_wheel(p, ws, N)
 
         
         i += 1

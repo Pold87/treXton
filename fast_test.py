@@ -100,9 +100,9 @@ def validate(args):
         
     path = args.test_imgs_path
     # Laptop
-    # labels = pd.read_csv("../orthomap/imgs/sift_targets.csv", index_col=0)
+    labels = pd.read_csv("../orthomap/imgs/sift_targets.csv", index_col=0)
     # PC
-    labels = pd.read_csv("../datasets/imgs/sift_targets.csv", index_col=0)    
+    #labels = pd.read_csv("../datasets/imgs/sift_targets.csv", index_col=0)    
 
     if args.standardize:
         mean, stdv = np.load("mean_stdv.npy")
