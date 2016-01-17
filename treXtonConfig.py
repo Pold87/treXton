@@ -41,6 +41,11 @@ parser.add_argument("--load_clf_settings", default=False, help="Load previously 
 parser.add_argument("--measure_time", default=False, help="Measure the time of single functions", action="store_true")
 parser.add_argument("--resample_textons", default=False, help="Resample textons if they are totally black", action="store_true")
 parser.add_argument("--show_histogram", default=False, help="Show histogram in visualization mode", action="store_true")
+parser.add_argument("--use_particle_filter", default=False, help="Use particle filter for position estimation", action="store_true")
+parser.add_argument("--sample_weight", default=False, help="Use sample weight in the fitting process of the regression", action="store_true")
+parser.add_argument("--use_xgboost", default=False, help="Use native xgboost python interface", action="store_true")
+parser.add_argument("--logos_path", default="/home/pold/orthomap/", help="Path which incldues subfolder to the images of the different logos")
+parser.add_argument("--max_imgs_per_class", default=1000, help="Maximum images for treXton classification", type=int)
 
 if __name__ == "__main__":
    args = parser.parse_known_args()

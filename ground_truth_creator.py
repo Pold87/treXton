@@ -17,7 +17,7 @@ def main(args):
     ids = []
     xs = []
     ys = []
-    confidence = []
+    num_matches = []
 
     rel = relocalize.Relocalizer(args.mymap)
     
@@ -31,13 +31,13 @@ def main(args):
             ids.append(i)
             xs.append(coords[0])
             ys.append(coords[1])
-            confidence.append(coords[2])
+            num_matches.append(coords[2])
             print(i, coords)
 
     targets['id'] = ids
     targets['x'] = xs
     targets['y'] = ys
-    targets['confidence'] = confidence
+    targets['matches'] = num_matches
 
     targets.to_csv("sift_targets.csv", index=False)
 
