@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -5,6 +7,7 @@ import matplotlib.animation as animation
 import math
 import scipy
 import cv2
+import warnings
 from matplotlib.cbook import get_sample_data
 import matplotlib.image as mpimg
 from matplotlib.offsetbox import TextArea, DrawingArea, OffsetImage, \
@@ -16,16 +19,22 @@ from sklearn.externals import joblib
 from filterpy.kalman import KalmanFilter
 from filterpy.common import Q_discrete_white_noise
 from scipy.linalg import block_diag
-
+import pickle
 import thread
 import time
 import threading
 from treXton import img_to_texton_histogram, RGB2Opponent, imread_opponent
 from treXtonConfig import parser
 
-args = parser.parse_args()
-mymap = args.mymap
-
+def pred_ints(model, X, percentile=95):
+    err_down = []
+    err_up = []
+    preds = []
+    for pred in model.estimators_:
+        preds.append(pred.predict(X)[0])
+    err_down = np.percentile(preds, (100 - percentile) / 2. )
+    err_up = np.percentile(preds, 100 - (100 - percentile) / 2.)
+    return err_down, err_up
 
 def init_tracker():
     tracker = KalmanFilter(dim_x=4, dim_z=2)
@@ -66,8 +75,7 @@ def rotate_coordinates(xs, ys, theta):
 
     return xs_new, ys_new
 
-def main():
-
+def validate(args):
 
     # Load k-means
 
@@ -91,7 +99,10 @@ def main():
     tfidf = joblib.load('classifiers/tfidf.pkl') 
         
     path = args.test_imgs_path
-    labels = pd.read_csv("../datasets/imgs/sift_targets.csv", index_col=0)
+    # Laptop
+    labels = pd.read_csv("../orthomap/imgs/sift_targets.csv", index_col=0)
+    # PC
+    #labels = pd.read_csv("../datasets/imgs/sift_targets.csv", index_col=0)    
 
     if args.standardize:
         mean, stdv = np.load("mean_stdv.npy")
@@ -103,18 +114,22 @@ def main():
     if test_on_the_fly:
         xs = []
         ys = []
-
-
         
     errors = []
     errors_x = []
     errors_y = []
 
+    times = []
+    
     for i in labels.index:
-
+        start = time.time()
         img_path = path + str(i) + ".png"
+        start_reading = time.time()                        
         pic = imread_opponent(img_path)
-
+        end_reading = time.time()
+        if args.measure_time:        
+            print("reading", end_reading - start_reading)        
+        
 
         if args.color_standardize:
 
@@ -128,16 +143,29 @@ def main():
             pic[:, :, 2] = pic[:, :, 2] / mystdv
 
 
+        start_ls = time.time()
         if args.local_standardize:
+
+            mymeans, mystdvs = cv2.meanStdDev(pic)
+            mymeans = mymeans.reshape(-1)
+            mystdvs = mystdvs.reshape(-1)            
+            
+            #mymeans = np.mean(pic, axis=(0, 1))
+            #mystdvs = np.std(pic, axis=(0, 1))
+            
+            pic = (pic - mymeans) / mystdvs
+        end_ls = time.time()            
+        if args.measure_time:
+            print("local standardize", int(1000 * (end_ls - start_ls)))        
+            
+        if args.histogram_standardize:
+            # create a CLAHE object (Arguments are optional)self.
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
             for channel in range(args.channels):
 
-                mymean = np.mean(np.ravel(pic[:, :, channel]))
-                mystdv = np.std(np.ravel(pic[:, :, channel]))
-
-                pic[:, :, channel] = pic[:, :, channel] - mymean
-                pic[:, :, channel] = pic[:, :, channel] / mystdv
-
+                pic[:, :, channel] = clahe.apply(pic[:, :, channel])
             
+                
         if args.standardize:
             for channel in range(args.channels):
                 mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
@@ -146,8 +174,9 @@ def main():
             
 
         # Get texton histogram of picture
-        query_histograms = []
+        query_histograms = np.empty((args.channels, args.num_textons))
 
+        start_histo = time.time()
                 
         for channel in range(args.channels):
             histogram = img_to_texton_histogram(pic[:, :, channel],
@@ -157,32 +186,52 @@ def main():
                                                     1,
                                                     args,
                                                     channel)
-            query_histograms.append(histogram)
-                             
-        histogram = np.ravel(query_histograms)             
-             
+            query_histograms[channel] = histogram
 
+        end_histo = time.time()
+        if args.measure_time:
+            print("histograms", end_histo - start_histo)
+            
+        start_tfidf = time.time()
         if args.tfidf:
-            histogram = tfidf.transform([histogram]).todense()
+            histogram = tfidf.transform(query_histograms.reshape(1, args.num_textons * args.channels)).todense()
             histogram = np.ravel(histogram)
-
+        end_tfidf = time.time()
+        if args.measure_time:        
+            print("tfidf", end_tfidf - start_tfidf)        
         
         preds = []
+        start_prediction = time.time()        
         if args.do_separate:
-            pred_x = clf_x.predict([histogram])
-            pred_y = clf_y.predict([histogram])
+            pred_x = clf_x.predict(histogram.reshape(1, args.num_textons * args.channels))
+            pred_y = clf_y.predict(histogram.reshape(1, args.num_textons * args.channels))
             pred  = np.array([(pred_x[0], pred_y[0])])
+            #err_down, err_up = pred_ints(clf_x, [histogram], percentile=75)
+            #print(err_down)
+            #print(pred[0][0])
+            #print(err_up)
+            #print("")
+            
         else:
-            for clf in clfs:
-                pred = clf.predict([histogram])
+            for i, clf in enumerate(clfs):
+                print(i)
+                pred = clf.predict(histogram.reshape(1, -1))
+                err_down, err_up = pred_ints(clf, histogram.reshape(1, -1), percentile=90)
+                print(err_down)
+                print(err_up)
+                print("")
                 preds.append(pred)
 
             pred = np.mean(preds, axis=0)
+        end_prediction = time.time()        
+        if args.measure_time:        
+            print("prediction (clf)", end_prediction - start_prediction)        
+            
 
-        if args.filter:
-            my_filter.update(pred.T)
-            filtered_pred = (my_filter.x[0][0], my_filter.x[2][0])
-            my_filter.predict()
+#        if args.filter:
+#            my_filter.update(pred.T)
+#            filtered_pred = (my_filter.x[0][0], my_filter.x[2][0])
+#            my_filter.predict()
 
 
         #print("Ground truth (x, y)", xs_opti[i], ys_opti[i])
@@ -197,22 +246,44 @@ def main():
         else:
             xy = (xs[i], ys[i])
 
-
+        start_error_stats = time.time()                                
         ground_truth =  (labels.x[i], labels.y[i])
         diff =  np.subtract(ground_truth, xy)
         abs_diff = np.fabs(diff)
-        errors_x.append(abs_diff[0])
-        errors_y.append(abs_diff[1])
+        errors_x.append(abs_diff[0] ** 2)
+        errors_y.append(abs_diff[1] ** 2)
         error = np.linalg.norm(abs_diff)
-        errors.append(error)
-                
-          
-    print("errors", np.mean(errors))
-    print("errors x", np.mean(errors_x))
-    print("errors y", np.mean(errors_y))
-         
+        errors.append(error ** 2)
+        end = time.time()
+        times.append(end - start)
+        end_error_stats = time.time()
+        if args.measure_time:        
+            print("error stats", end_error_stats - start_error_stats)        
 
         
 
+    val_errors = np.mean(errors)
+    val_errors_x = np.mean(errors_x)
+    val_errors_y = np.mean(errors_y)
+    val_times = np.mean(times)
+    print("times", val_times)
+    print("frequency", int(1 / val_times))
+    
+    print("errors", np.sqrt(val_errors))
+    print("errors x", np.sqrt(val_errors_x))
+    print("errors y", np.sqrt(val_errors_y))
+
+    all_errors = np.array([val_errors,
+                           val_errors_x,
+                           val_errors_y])
+    
+    np.save("all_errors.npy", all_errors)
+
+
+
+    return val_errors, val_errors_x, val_errors_y
+        
+
 if __name__ == "__main__":
-    main()
+    args = parser.parse_args()
+    validate(args)

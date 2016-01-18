@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.neighbors import NearestNeighbors, KNeighborsClassifier
-from sklearn.neighbors import LSHForest
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
+from sklearn.neighbors import LSHForest, DistanceMetric
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor, AdaBoostRegressor
+from sklearn.gaussian_process import GaussianProcessRegressor
 from collections import Counter
 from scipy.spatial import distance
 import texton_helpers
@@ -21,6 +22,7 @@ import heatmap
 import time
 import sys
 import math
+import warnings
 from scipy import stats
 from math import log, sqrt
 from scipy import spatial
@@ -33,16 +35,79 @@ from sklearn import svm
 import xgboost as xgb
 import configargparse
 from treXtonConfig import parser
+from sklearn.metrics.pairwise import chi2_kernel
+from sknn.backend import lasagne
+from sklearn.neural_network import MLPRegressor
+from sknn.mlp import Regressor, Layer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import MinMaxScaler
+import pickle
+from scipy.linalg import get_blas_funcs
+from scipy.linalg import blas as FB
+from sklearn.utils.extmath import fast_dot
+import pbcvt
 
 tfidf = TfidfTransformer()
+
+def mydist(x, y):
+
+    x_norm = x / np.sum(x)
+    y_norm = y / np.sum(y)
+
+    return np.sum((x_norm - y_norm) ** 2 / (x_norm + y_norm + 1e-8)) / 2
+
 
 def RGB2Opponent(img):
 
     A = np.array([[0.06, 0.63, 0.27],
                    [0.30, 0.04, -0.35],
-                   [0.34, -0.60, 0.17]])
+                   [0.34, -0.60, 0.17]]).astype(np.float32)
+    img = img.astype(np.float32)
 
-    return np.dot(img, A.T)
+    prod = pbcvt.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
+    #prod = np.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
+    
+    return prod
+
+
+
+def calc_sim(t1, t2, s = 10):
+
+    t1 = t1.reshape(-1)
+    t2 = t2.reshape(-1)    
+    
+    dist = np.linalg.norm(t1 - t2)
+    sim = np.exp((- dist) / s ** 2)
+    
+    return sim
+
+def extract_one_texton(img, x, y, texton_size_x, texton_size_y):
+    texton = img[y:y + texton_size_x, x:x + texton_size_y, 0]
+    return texton
+
+def my_extract_patches(img, texton_size, max_textons):
+
+    h = img.shape[0]
+    w = img.shape[1]    
+
+    texton_positions = np.zeros((max_textons, 2))
+
+    patches = np.zeros((max_textons,
+                        texton_size[0], texton_size[1]))
+    
+    for i in range(max_textons):
+
+        x = np.random.randint(w - texton_size[0] - 1)
+        y = np.random.randint(h - texton_size[1] - 1)
+
+        texton_positions[i] = np.array([x, y])
+
+        extracted_texton = extract_one_texton(img, x, y,
+                                        texton_size[0], texton_size[1])
+
+        patches[i] = extracted_texton
+
+    return patches, texton_positions
 
 def extract_textons(img, max_textons, args, real_max_textons, channel):
 
@@ -52,9 +117,16 @@ def extract_textons(img, max_textons, args, real_max_textons, channel):
     used.
     """
 
-    patches = image.extract_patches_2d(img, 
-                                       (args.texton_size, args.texton_size),
-                                       real_max_textons)
+    if args.use_dipoles:
+        patches, texton_positions = my_extract_patches(img, 
+                                                       (args.texton_size, args.texton_size),
+                                                       real_max_textons)
+        
+    else:
+        patches = image.extract_patches_2d(img, 
+                                           (args.texton_size, args.texton_size),
+                                           real_max_textons)
+        texton_positions = []
 
     # Flatten 2D array
     patches = patches.reshape(-1, args.texton_size ** 2)
@@ -68,28 +140,31 @@ def extract_textons(img, max_textons, args, real_max_textons, channel):
         mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
         new_zero = - mean / stdv
 
-    if args.local_standardize:
+    #if args.local_standardize:
         
-        mymean = np.mean(np.ravel(img))
-        mystdv = np.std(np.ravel(img))
+    #    mymean = np.mean(np.ravel(img))
+    #    mystdv = np.std(np.ravel(img))
 
-        new_zero = - mymean / mystdv
-
+    #    new_zero = - mymean / mystdv        
 
     counter = 0
-    for patch in patches:
-        #if not all(patch == patch[0]):
+    if args.resample_textons:
+        for patch in patches:
+            #if not all(patch == patch[0]):
+
+            if not all(patch == new_zero) or not all(patch == 0):
+                new_patches.append(patch)
+                counter += 1
+            if counter == max_textons: break
+
+        if len(new_patches) == 0:
+            new_patches.append(patches[0])
+    else:
+        new_patches = patches
+
+    
         
-        if not all(patch == new_zero) or not all(patch == 0):
-            new_patches.append(patch)
-            counter += 1
-        if counter == max_textons: break
-
-    if len(new_patches) == 0:
-        new_patches.append(patches[0])
-
-    return new_patches
-
+    return new_patches, texton_positions
 
 def extract_textons_from_path(path, max_textons=100, channel=0):
 
@@ -108,8 +183,8 @@ def extract_textons_from_path(path, max_textons=100, channel=0):
     img_vars_per_channel = []
 
     start = 0
-    stop = 85
-    step = 1
+    stop = 1000
+    step = 30
 
     for pic_num in range(start, stop, step):
 
@@ -118,7 +193,6 @@ def extract_textons_from_path(path, max_textons=100, channel=0):
             genimg_file = path + str(pic_num) + "_0.png"
         else:
             genimg_file = path + str(pic_num) + ".png"
-        print(genimg_file)
         
         genimg = imread_opponent(genimg_file)
         genimg = genimg[:, :, channel]
@@ -167,7 +241,6 @@ def extract_textons_from_path(path, max_textons=100, channel=0):
             else:
                 print("img_vars[k]", img_vars[k])
                 genimg = genimg / np.sqrt(img_vars[k])
-                print(genimg)
 
         if args.local_standardize:
 
@@ -177,6 +250,18 @@ def extract_textons_from_path(path, max_textons=100, channel=0):
             genimg = genimg - mymean
             genimg = genimg / mystdv
 
+
+        if args.histogram_standardize:
+
+            # create a CLAHE object (Arguments are optional).
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            genimg = clahe.apply(genimg)
+
+        if args.use_dipoles:
+            delta_x = cv2.Sobel(genimg, cv2.CV_64F, 1, 0, ksize=3)
+            invar = delta_x / genimg
+
+            # TODO: this function should get the entire image as inpit
 
         if args.standardize:
             mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
@@ -197,7 +282,7 @@ def extract_textons_from_path(path, max_textons=100, channel=0):
     return all_patches
 
     
-def train_and_cluster_textons(textons, n_clusters=25):
+def train_and_cluster_textons(textons, n_clusters=25, channel=0):
 
     """
     Returns a classifier, learned from the orignal image, and the
@@ -216,7 +301,7 @@ def train_and_cluster_textons(textons, n_clusters=25):
     centers = k_means.cluster_centers_
 
     if args.show_graphs:
-        display_textons(centers)
+        display_textons(centers, channel)
 
     return k_means, predictions, centers
 
@@ -257,7 +342,7 @@ def match_histograms(query_histogram, location_histogram, weights=None):
     return dist
     
 
-def display_textons(textons, input_is_1D=False, save=True):
+def display_textons(textons, channel=0, input_is_1D=False, save=True):
 
     """
     This function displays the input textons 
@@ -280,8 +365,8 @@ def display_textons(textons, input_is_1D=False, save=True):
                    cmap = cm.Greys_r, 
                    interpolation="nearest")
     
-    plt.savefig("extract_textons.png")
-    plt.show()
+    plt.savefig("extracted_textons_" + str(channel) + ".png")
+    #plt.show()
 
 
 
@@ -290,22 +375,105 @@ def display_histogram(histogram):
     plt.bar(np.arange(len(histogram)), histogram)
     plt.show()
 
+def do_dipole_transformations(img):
+
+    # Calculate gradients
+    sobelx = cv2.Sobel(img, cv2.CV_8U, 1, 0, ksize=3, scale=4)
+    sobely = cv2.Sobel(img, cv2.CV_8U, 0, 1, ksize=3, scale=4)
+
+    # Color invariant
+
+    mean_x, std_x = cv2.meanStdDev(sobelx)
+    mean_y, std_y = cv2.meanStdDev(sobely)
+
+    invar_x = sobelx / std_x.T
+    invar_y = sobely / std_y.T
+
+    invar_grad = np.sqrt(invar_x ** 2 + invar_y ** 2)
+    invar_direction = np.arctan(invar_y / (invar_x + 1e-8))
+
+    return invar_grad, invar_direction
+    
+    
+def get_histogram_dipole(img, clusters, texton_positions, args):
+
+    invar_grad, invar_direction = do_dipole_transformations(img)
+
+
+    edge_strengths = np.sqrt(invar_grad[0] ** 2 + invar_grad[1] ** 2 + invar_grad[2] ** 2)
+
+    edge_strengths = edge_strengths / np.sum(edge_strengths)
+
+    invar_direction = invar_direction * edge_strengths
+    
+    s = 1
+
+    histogram = np.zeros((args.num_textons, 4))
+
+    for i, (x, y) in enumerate(texton_positions):
+
+        
+        
+        intens = invar_direction[y + args.texton_size, x + args.texton_size, 0] #.reshape(-1)
+        intens_inverse = - intens
+        by = invar_direction[y + args.texton_size, x + args.texton_size, 1] #.reshape(-1)
+        gr = invar_direction[y + args.texton_size, x + args.texton_size, 2] #.reshape(-1)
+
+        dist1 = np.linalg.norm(intens - by)
+        dist2 = np.linalg.norm(by - intens_inverse)
+        dist3 = np.linalg.norm(intens - gr)
+        dist4 = np.linalg.norm(gr - intens_inverse)
+
+        sim1 = np.exp((- dist1) / s ** 2)
+        sim2 = np.exp((- dist2) / s ** 2)
+        sim3 = np.exp((- dist3) / s ** 2)
+        sim4 = np.exp((- dist4) / s ** 2)
+
+#        print(sim1)
+#        print(sim2)
+#        print(sim3)
+#        print(sim4)
+#
+#        print("")
+#
+        histogram[clusters[i]] += np.array([sim1, sim2, sim3, sim4])
+
+
+        
+    histogram = histogram.reshape(-1)
+
+    return histogram
+
 
 def img_to_texton_histogram(img, classifier, max_textons, n_clusters, weights, args, channel):
 
     # Extract all textons of the query image
-    textons = extract_textons(img, max_textons, args, 1000, channel)
+    if args.resample_textons:
+        total_textons = int(max_textons * 1.5)
+    else:
+        total_textons = int(max_textons)
+
+    start_extraction = time.time()
+    textons, texton_positions = extract_textons(img, max_textons, args, total_textons, channel)
+    end_extraction = time.time()
+    if args.measure_time:        
+        print("extraction", end_extraction - start_extraction)        
 
     # Get classes of textons of the query image
+    start_clustering = time.time()    
     clusters = cluster_textons(textons, classifier)
+    end_clustering = time.time()    
+    if args.measure_time:        
+        print("clustering", end_clustering - start_clustering)        
 
+
+    if args.use_dipoles:
+        histogram = get_histogram_dipole(img, clusters, texton_positions, args)
+    else:
     # Get the frequency of each texton class of the query image
-    histogram = np.bincount(clusters,
-                            minlength=n_clusters) # minlength guarantees that missing clusters are set to 0
-
-#    histogram[73] = 0
-
-#    print("Amount textons:", len(textons) - twentysixer)
+        histogram = np.bincount(clusters,
+                                minlength=n_clusters) # minlength guarantees that missing clusters are set to 0
+    
 
     #weights = len(textons) / args.max_textons
                             
@@ -320,7 +488,10 @@ def imread_opponent(path):
     img = plt.imread(path, 1)
 
     # Convert to opponent space
+    #start = time.time()
     img = RGB2Opponent(img)
+    #end = time.time()
+    #print("Time convert", end - start)
 
     return img
 
@@ -328,8 +499,7 @@ def imread_opponent_gray(path):
 
     return imread_opponent(path)[:, :, 0]
 
-
-def train_classifier_draug(path,
+def train_regression_draug(path,
                            max_textons=None,
                            n_clusters=20,
                            args=None):
@@ -353,7 +523,7 @@ def train_classifier_draug(path,
 
             # Apply k-Means on the training image
             classifier, training_clusters, centers = train_and_cluster_textons(textons=training_textons, 
-                                                                           n_clusters=n_clusters)
+                                                                           n_clusters=n_clusters, channel=channel)
 
             classifiers.append(classifier)
             
@@ -372,43 +542,33 @@ def train_classifier_draug(path,
     histograms = []
     y_top_left = []
     y_bottom_right = []
+    num_matches = []    
 
     
 
     from sklearn.neighbors import KNeighborsRegressor
-    from sklearn.linear_model import LinearRegression 
+    from sklearn.linear_model import LinearRegression, Ridge
+    import sklearn.linear_model as lm
 #    rf_top_left = RandomForestRegressor(500, n_jobs=-1)
 #    rf_top_left = KNeighborsRegressor(p=1)
 
 
-    arguments = {'max_depth': 15,
-                 'learning_rate': 0.01,
-                 'n_estimators':1200,
-                 'subsample': 0.85,
-                 'min_child_weight': 6,
-                 'gamma': 2,
-                 'colsample_bytree': 0.75,
-                 'colsample_bylevel': 0.9,
-                 'silent': True}
+    arguments = {
+        'booster': 'gbtree',
+        'eval_metric': 'rmse',
+        'eta': 0.01,
+        'max_depth': 15,
+        'n_estimators':500,
+        'nthread': 4,
+        'subsample': 0.95,
+        'min_child_weight': 1,
+        'gamma': 0.01,
+        'colsample_bytree': 0.95,
+        'colsample_bylevel': 0.95,
+        'nthread': 4,
+        'silent': False
+    }
     
-    if args.do_separate:
-        clf_x_coord = xgb.XGBRegressor(**arguments)
-        clf_y_coord = xgb.XGBRegressor(**arguments)
-        #clf_x_coord = svm.LinearSVR(epsilon=0)
-        #clf_y_coord = svm.LinearSVR(epsilon=0)
-        #clf_x_coord = RandomForestRegressor(500, n_jobs=-1)
-        #clf_y_coord = RandomForestRegressor(500, n_jobs=-1)
-        
-    
-    else:
-        clf0 = RandomForestRegressor(200)
-        clf1 = RandomForestRegressor(200)
-        #clf0 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=11)
-        #clf0 = KNeighborsRegressor(weights='uniform', n_neighbors=7, p=3)
-        #clf1 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=9)
-        clfs = [clf0, clf1]
-        
-
     weights = 1
 
 #    genimgs = glob.glob(genimgs_path + "*.png")
@@ -416,112 +576,183 @@ def train_classifier_draug(path,
     picturenumbers = np.random.randint(0, 220, 100)
     picturenumbers = range(0, args.num_draug_pics, 1)
 
-    if args.use_draug_folder:
-        picturevariants = 15
+    if args.load_histograms:
+         histograms = np.load("histograms.npy")
+         y_top_left = np.load("y_top_left.npy")
+         y_bottom_right = np.load("y_bottom_right.npy")                           
     else:
-        picturevariants = 1
-        
-    for i in picturenumbers:
 
-        for j in range(picturevariants):
+        if args.use_draug_folder:
+            picturevariants = 15
+        else:
+            picturevariants = 1
 
-            if picturevariants == 1:
-                genimg = genimgs_path + str(i) + ".png"
-            else:
-                genimg = genimgs_path + str(i) + "_" + str(j) + ".png"
+        for i in picturenumbers:
+
+            for j in range(picturevariants):
+
+                if picturevariants == 1:
+                    genimg = genimgs_path + str(i) + ".png"
+                else:
+                    genimg = genimgs_path + str(i) + "_" + str(j) + ".png"
 
 
-            query_image = imread_opponent(genimg)
+                query_image = imread_opponent(genimg)
 
 
-            if args.local_standardize:
+                if args.local_standardize:
+                    for channel in range(args.channels):
+                        mymean = np.mean(np.ravel(query_image[:, :, channel]))
+                        mystdv = np.std(np.ravel(query_image[:, :, channel]))
+
+                        query_image[:, :, channel] = query_image[:, :, channel] - mymean
+                        query_image[:, :, channel] = query_image[:, :, channel] / mystdv
+
+                if args.color_standardize:
+                    mymean = np.mean(np.ravel(query_image[:, :, 0]))
+                    mystdv = np.std(np.ravel(query_image[:, :, 0]))
+
+                    query_image[:, :, 0] = query_image[:, :, 0] - mymean
+                    query_image[:, :, 0] = query_image[:, :, 0] / mystdv                
+                    query_image[:, :, 1] = query_image[:, :, 1] / mystdv
+                    query_image[:, :, 2] = query_image[:, :, 2] / mystdv            
+
+                if args.histogram_standardize:
+
+                    # create a CLAHE object (Arguments are optional).
+                    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+                    for channel in range(args.channels):
+                        query_image[:, :, channel] = clahe.apply(query_image[:, :, channel])
+
+                                        
+                if args.standardize:
+                    for channel in range(args.channels):
+                        mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
+                        query_image[:, :, channel] = query_image[:, :, channel] - mean
+                        query_image[:, :, channel] = query_image[:, :, channel] / stdv
+
+                top_left_x = coordinates_gtl.ix[i, "x"]
+                top_left_y = coordinates_gtl.ix[i, "y"]
+                matches = coordinates_gtl.ix[i, "matches"]
+                num_matches.append(matches)
+
+                if args.do_separate:
+                    y_top_left.append(top_left_x)
+                    y_bottom_right.append(top_left_y)
+                else:
+                    y_top_left.append((top_left_x, top_left_y))
+
+
+                query_histograms = []
                 for channel in range(args.channels):
-                    mymean = np.mean(np.ravel(query_image[:, :, channel]))
-                    mystdv = np.std(np.ravel(query_image[:, :, channel]))
-                    
-                    query_image[:, :, channel] = query_image[:, :, channel] - mymean
-                    query_image[:, :, channel] = query_image[:, :, channel] / mystdv
+                    classifier = classifiers[channel]
+                    if args.use_dipoles:
+                        query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args, channel)
+                    else:
+                        query_histogram = img_to_texton_histogram(query_image[:, :, channel], classifier, max_textons, n_clusters, weights, args, channel)
+                    query_histograms.append(query_histogram)
 
-            if args.color_standardize:
-                mymean = np.mean(np.ravel(query_image[:, :, 0]))
-                mystdv = np.std(np.ravel(query_image[:, :, 0]))
+                query_histograms = np.ravel(query_histograms)
 
-                query_image[:, :, 0] = query_image[:, :, 0] - mymean
-                query_image[:, :, 0] = query_image[:, :, 0] / mystdv                
-                query_image[:, :, 1] = query_image[:, :, 1] / mystdv
-                query_image[:, :, 2] = query_image[:, :, 2] / mystdv            
-            
-            if args.standardize:
-                for channel in range(args.channels):
-                    mean, stdv = np.load("mean_stdv_" + str(channel) + ".npy")
-                    query_image[:, :, channel] = query_image[:, :, channel] - mean
-                    query_image[:, :, channel] = query_image[:, :, channel] / stdv
+                histograms.append(query_histograms)
+        np.save("histograms.npy", np.array(histograms))
+        np.save("y_top_left.npy", np.array(y_top_left))
+        np.save("y_bottom_right.npy", np.array(y_bottom_right))
+        np.save("num_matches.npy", np.array(num_matches))                        
                 
-            top_left_x = coordinates_gtl.ix[i, "x"]
-            top_left_y = coordinates_gtl.ix[i, "y"]
-
-            if args.do_separate:
-                y_top_left.append(top_left_x)
-                y_bottom_right.append(top_left_y)
-            else:
-                y_top_left.append((top_left_x, top_left_y))
-
-
-            query_histograms = []
-            for channel in range(args.channels):
-                classifier = classifiers[channel]
-                query_histogram = img_to_texton_histogram(query_image[:, :, channel], classifier, max_textons, n_clusters, weights, args, channel)
-                query_histograms.append(query_histogram)
-
-            query_histograms = np.ravel(query_histograms)
-
-            histograms.append(query_histograms)
-
-    # Get histograms and targets from draug
-
-    use_draug = False
-
-    if use_draug:
-
-        for i in range(0, 4800, 1):
-
-            mydraugpath = "../draug/genimgs/"
-            genimg = mydraugpath + str(i) + ".png"
-
-            query_image = imread_opponent_gray(genimg)
-
-            if args.standardize:
-                query_image = query_image - mean
-                query_image = query_image / stdv
-
-            #cv2.imwrite(str(i) + "_normalized.png", query_image)
-
-            top_left_x = coordinates_draug.ix[i, "x"]
-            top_left_y = coordinates_draug.ix[i, "y"]
-
-            if args.do_separate:
-                y_top_left.append(top_left_x)
-                y_bottom_right.append(top_left_y)
-            else:
-                y_top_left.append((top_left_x, top_left_y))
-
-
-            query_histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
-
-            histograms.append(query_histogram)
 
     if args.tfidf:
         histograms = tfidf.fit_transform(histograms).todense()
-        joblib.dump(tfidf, 'classifiers/tfidf.pkl') 
+        joblib.dump(tfidf, 'classifiers/tfidf.pkl')
+
+    if args.do_separate:
+        if args.load_clf_settings:
+            clf_x_coord = pickle.load(open("hyperopt_clf_x.p", "rb" ))
+            clf_y_coord = pickle.load(open("hyperopt_clf_y.p", "rb" ))
+        else:
+            pass
+            #K = chi2_kernel(histograms, gamma=.5)                
+            #dist = DistanceMetric.get_metric(mydist)        
+            #clf_x_coord = lm.TheilSenRegressor()
+            #clf_y_coord = lm.TheilSenRegressor()
+
+            #clf_x_coord = xgb.XGBRegressor(**arguments)
+            #clf_y_coord = xgb.XGBRegressor(**arguments)
+            #clf_x_coord = svm.LinearSVR(epsilon=0)
+            #clf_y_coord = svm.LinearSVR(epsilon=0)
+            #clf_x_coord = RandomForestRegressor(50, n_jobs=-1)
+            #clf_y_coord = RandomForestRegressor(50, n_jobs=-1)
+            #clf_x_coord = lm.BayesianRidge(normalize=True)
+            #clf_y_coord = lm.BayesianRidge(normalize=True)
+            #clf_x_coord = AdaBoostRegressor()
+            #clf_y_coord = AdaBoostRegressor()            
+            #clf_x_coord = GradientBoostingRegressor()
+            #clf_y_coord = GradientBoostingRegressor()
+            #clf_x_coord = GaussianProcessRegressor()
+            #clf_y_coord = GaussianProcessRegressor()
+            clf_x_coord = KNeighborsRegressor(weights='distance', metric=mydist)
+            clf_y_coord = KNeighborsRegressor(weights='distance', metric=mydist)
+            #clf_x_coord = KNeighborsRegressor(3, weights='distance')
+            #clf_y_coord = KNeighborsRegressor(3, weights='distance')
+            
+            #clf_x_coord = LinearRegression()
+            #clf_y_coord = LinearRegression()                
+            #clf_x_coord = MLPRegressor()
+            #clf_y_coord = MLPRegressor()
+
+
+    else:
+        clf0 = RandomForestRegressor(500, n_jobs=-1)
+        clf1 = RandomForestRegressor(500, n_jobs=-1)
+        #clf0 = GaussianProcess(theta0=0.1, thetaL=.001, thetaU=1.)
+        #clf1 = GaussianProcess(theta0=0.1, thetaL=.001, thetaU=1.)
+        #clf0 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=11)
+        #clf0 = KNeighborsRegressor(weights='uniform', n_neighbors=7, p=3)
+        #clf1 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=9)
+        clfs = [clf0, clf1]
+        
+        
 
     if args.do_separate:
         print("Fitting")
-        clf_x_coord.fit(histograms, y_top_left)
-        clf_y_coord.fit(histograms, y_bottom_right)
-        print("Finished Fitting")
-        clf = clf_x_coord
-        joblib.dump(clf_x_coord, 'classifiers/clf_x.pkl')
-        joblib.dump(clf_y_coord, 'classifiers/clf_y.pkl') 
+
+        if args.use_xgboost:
+            num_round = 500
+            #evallist  = [(dtest,'eval'), (dtrain,'train')]
+            dtrain_x = xgb.DMatrix(histograms,
+                                 label=y_top_left,
+                                 weight=np.array(num_matches))
+            dtrain_y = xgb.DMatrix(histograms,
+                                 label=y_bottom_right,
+                                 weight=np.array(num_matches))
+            
+            bst_x = xgb.train(arguments,
+                            dtrain_x,
+                            num_round)
+            
+            bst_y = xgb.train(arguments,
+                            dtrain_y,
+                            num_round)
+            clf = bst_x
+            joblib.dump(bst_x, 'classifiers/clf_x.pkl')
+            joblib.dump(bst_y, 'classifiers/clf_y.pkl')             
+
+            
+        else:
+
+            if args.sample_weight:
+                print("Using sample weight")
+                clf_x_coord.fit(histograms, y_top_left, sample_weight=np.array(num_matches))
+                clf_y_coord.fit(histograms, y_bottom_right, sample_weight=np.array(num_matches))
+
+            else:
+                clf_x_coord.fit(histograms, y_top_left)
+                print(clf_x_coord.predict(histograms))
+                clf_y_coord.fit(histograms, y_bottom_right)
+            print("Finished Fitting")
+            clf = clf_x_coord
+            joblib.dump(clf_x_coord, 'classifiers/clf_x.pkl')
+            joblib.dump(clf_y_coord, 'classifiers/clf_y.pkl') 
         
     else:
         for j, clf in enumerate(clfs):
@@ -560,7 +791,7 @@ def main_draug(args):
     
     path = base_dir
 
-    rf_top_left,  histograms, y_top_left, classifier, weights = train_classifier_draug(
+    rf_top_left,  histograms, y_top_left, classifier, weights = train_regression_draug(
         path=path,
         max_textons=max_textons,
         n_clusters=n_clusters,
@@ -584,14 +815,14 @@ def main_draug(args):
             top_left_y = coordinates.ix[i, "y"]
             
             pred_top_left = rf_top_left.predict([histogram])
-            print "pred is", pred_top_left
-            print "real values", (top_left_x, top_left_y)
+            print ("pred is", pred_top_left)
+            print ("real values", (top_left_x, top_left_y))
 
             diff_x = abs(pred_top_left[0][0] - top_left_x)
             diff_y = abs(pred_top_left[0][1] - top_left_y)
             
-            print "diff x", diff_x
-            print "diff y", diff_y
+            print("diff x", diff_x)
+            print("diff y", diff_y)
 
             errors_x.append(diff_x)
             errors_y.append(diff_y)
@@ -616,14 +847,14 @@ def main_draug(args):
             top_left_y = coordinates.ix[i, "y"]
             
             pred_top_left = rf_top_left.predict([histogram])
-            print "pred is", pred_top_left
-            print "real values", (top_left_x, top_left_y)
+            print("pred is", pred_top_left)
+            print("real values", (top_left_x, top_left_y))
 
             diff_x = abs(pred_top_left[0][0] - top_left_x)
             diff_y = abs(pred_top_left[0][1] - top_left_y)
             
-            print "diff x", diff_x
-            print "diff y", diff_y
+            print("diff x", diff_x)
+            print("diff y", diff_y)
 
             errors_x.append(diff_x)
             errors_y.append(diff_y)
@@ -649,7 +880,7 @@ def main_draug(args):
                 display_histogram(histogram)
 
             pred_top_left = rf_top_left.predict([histogram])
-            print "pred is", pred_top_left
+            print("pred is", pred_top_left)
 
             predictions.append(pred_top_left[0])
 
