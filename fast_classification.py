@@ -1,38 +1,13 @@
 from __future__ import division
 
 import numpy as np
-import pandas as pd
+from sklearn.externals import joblib
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-import math
-import scipy
 from matplotlib._png import read_png
 import cv2
-from matplotlib.cbook import get_sample_data
-import matplotlib.image as mpimg
-from matplotlib.offsetbox import TextArea, DrawingArea, OffsetImage, \
-    AnnotationBbox
-from matplotlib._png import read_png
-import argparse
-from multiprocessing import Process, Value
-from sklearn.externals import joblib
-from filterpy.kalman import KalmanFilter
-from filterpy.common import Q_discrete_white_noise
-from scipy.linalg import block_diag
-import thread
-import time
-import threading
-from treXton import img_to_texton_histogram, RGB2Opponent, imread_opponent
-import treXton
-import relocalize
-import configargparse
-import treXtonConfig
-import seaborn as sns
+from treXton import img_to_texton_histogram, RGB2Opponent
+from matplotlib.offsetbox import OffsetImage
 from treXtonConfig import parser
-import time
-import particle_filter as pf
-import xgboost as xgb
-import bayes
 
 def main(args):
 
@@ -117,12 +92,12 @@ def main(args):
 
         clf = joblib.load("classifiers/logo_clf.pkl")
 
-        pred = clf.predict(query_histograms.reshape(1, -1))
-        probs = clf.predict_proba(query_histograms.reshape(1, -1))
+        pred = clf.predict(query_histograms)
+        probs = clf.predict_proba(query_histograms)
 
-        signs = ['linux', 'camel', 'firefox']
-        
-        for i in zip(signs, probs[0]):
+        print("pred is", pred)
+
+        for i in zip(clf.classes_, probs[0]):
             print i
         print("")
 

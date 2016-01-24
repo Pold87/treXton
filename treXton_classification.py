@@ -47,6 +47,7 @@ from scipy.linalg import blas as FB
 from sklearn.utils.extmath import fast_dot
 import pbcvt
 import treXton
+from sklearn import preprocessing
 
 symbols = ['vw',
            'mcdonalds',
@@ -65,12 +66,7 @@ symbols = ['linux',
            'firefox',
            'logitech',
            'camel']
-
-symbols = ['linux',
-           'camel',
-           'firefox']
-
-    
+       
 def train_classifier_draug(path,
                            max_textons=None,
                            n_clusters=20,
@@ -141,7 +137,7 @@ def train_classifier_draug(path,
 
         np.save("histograms_logos.npy", np.array(histograms))
         np.save("labels.npy", np.array(labels))
-        clf = RandomForestClassifier(n_estimators=100,
+        clf = RandomForestClassifier(n_estimators=300,
                                      max_depth=15)
         clf.fit(np.array(histograms), np.array(labels))
         joblib.dump(clf, 'classifiers/logo_clf.pkl')
