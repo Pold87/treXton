@@ -24,7 +24,7 @@ import time
 import threading
 from treXton import img_to_texton_histogram, RGB2Opponent, imread_opponent
 import treXton
-import relocalize
+#import relocalize
 import configargparse
 import treXtonConfig
 import seaborn as sns
