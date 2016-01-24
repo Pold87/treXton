@@ -12,7 +12,6 @@ from sklearn.cluster import KMeans
 from sklearn.neighbors import NearestNeighbors, KNeighborsClassifier
 from sklearn.neighbors import LSHForest, DistanceMetric
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor, AdaBoostRegressor
-from sklearn.gaussian_process import GaussianProcessRegressor
 from collections import Counter
 from scipy.spatial import distance
 import texton_helpers
@@ -36,16 +35,12 @@ import xgboost as xgb
 import configargparse
 from treXtonConfig import parser
 from sklearn.metrics.pairwise import chi2_kernel
-from sknn.backend import lasagne
-from sklearn.neural_network import MLPRegressor
-from sknn.mlp import Regressor, Layer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler
 import pickle
 from scipy.linalg import get_blas_funcs
 from scipy.linalg import blas as FB
 from sklearn.utils.extmath import fast_dot
-import pbcvt
 
 tfidf = TfidfTransformer()
 
@@ -64,8 +59,8 @@ def RGB2Opponent(img):
                    [0.34, -0.60, 0.17]]).astype(np.float32)
     img = img.astype(np.float32)
 
-    prod = pbcvt.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
-    #prod = np.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
+    #prod = pbcvt.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
+    prod = np.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
     
     return prod
 
@@ -183,8 +178,8 @@ def extract_textons_from_path(path, max_textons=100, channel=0):
     img_vars_per_channel = []
 
     start = 0
-    stop = 1000
-    step = 30
+    stop = 80
+    step = 5
 
     for pic_num in range(start, stop, step):
 
