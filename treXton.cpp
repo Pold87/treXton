@@ -15,12 +15,44 @@
 using namespace std;
 using namespace cv;
 
+// Currently works for 1D only
+Mat extract_one_texton(const Mat &img,
+                   const int &x,
+                   const int &y,
+                   const int &texton_size_w,
+                   const int &texton_size_h) {
+
+   Mat texton;
+   texton = cv::Mat(img, cv::Rect(x, y, texton_size_w, texton_size_h)).clone();
+
+   cout << texton << endl;
+
+   cv::Mat texton_flat;
+   texton_flat = texton.reshape(1, 1);
+
+   cout << texton_flat << endl;
+
+}
 
 
 int main(int argc, char *argv[])
 {
-  Mat img;
-  img = imread(argv[1], CV_LOAD_IMAGE_COLOR);
 
-  return 0;
+   // Read in image
+   Mat img;
+   img = imread(argv[1], CV_LOAD_IMAGE_GRAYSCALE);
+
+   // Check for invalid input
+   if (!img.data) {
+      std::cout << "Could not open or find the image" << std::endl;
+      return -1;
+   }
+
+   //imshow("frame", img);
+
+   extract_one_texton(img, 0, 0, 5, 5);
+
+   waitKey(0);
+
+   return 0;
 }

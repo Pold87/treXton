@@ -1,6 +1,6 @@
 CFLAGS = `pkg-config --cflags opencv`
 LIBS = `pkg-config --libs opencv`
-ALLFLAGS = $(CFLAGS) $(LIBS) -std=c++11 -lboost_filesystem -lboost_system
+ALLFLAGS = $(CFLAGS) $(LIBS) -std=c++11
 
 all: treXton
 
