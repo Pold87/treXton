@@ -12,7 +12,6 @@ from sklearn.cluster import KMeans
 from sklearn.neighbors import NearestNeighbors, KNeighborsClassifier
 from sklearn.neighbors import LSHForest, DistanceMetric
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor, AdaBoostRegressor
-from sklearn.gaussian_process import GaussianProcessRegressor
 from collections import Counter
 from scipy.spatial import distance
 import texton_helpers
@@ -85,7 +84,7 @@ def train_classifier_draug(path,
     histograms = []
     labels = []
 
-    base_dir = "/home/pold/Documents/image_recorder/"
+    base_dir = "/home/pold/Documents/draug/"
 
     for symbol in symbols:
 
@@ -134,6 +133,8 @@ def train_classifier_draug(path,
                 query_histograms = np.ravel(query_histograms)
 
                 histograms.append(query_histograms)
+
+                np.savetxt(symbol + ".csv", query_histograms, delimiter=",", fmt='%d')
 
         np.save("histograms_logos.npy", np.array(histograms))
         np.save("labels.npy", np.array(labels))

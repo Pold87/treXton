@@ -59,8 +59,16 @@ def RGB2Opponent(img):
                    [0.34, -0.60, 0.17]]).astype(np.float32)
     img = img.astype(np.float32)
 
+    img_width = 320
+    img_height = 240
+
+
     #prod = pbcvt.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
-    prod = np.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
+    prod = np.dot(img.reshape(img_height * img_width, 3), A.T).reshape(img_height, img_width, 3)
+
+    # DEBUG ARDRONE
+    prod = cv2.cvtColor(img, cv2.COLOR_RGB2YUV)
+    prod = prod.astype(int)
     
     return prod
 
@@ -521,6 +529,8 @@ def train_regression_draug(path,
                                                                            n_clusters=n_clusters, channel=channel)
 
             classifiers.append(classifier)
+            np.set_printoptions(suppress=True)
+            np.savetxt("textons.csv", centers, delimiter=",", fmt='%.2f')
             
             joblib.dump(classifier, 'classifiers/kmeans' + str(channel) + '.pkl')
             
