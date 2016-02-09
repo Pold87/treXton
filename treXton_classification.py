@@ -35,16 +35,13 @@ import xgboost as xgb
 import configargparse
 from treXtonConfig import parser
 from sklearn.metrics.pairwise import chi2_kernel
-from sknn.backend import lasagne
-from sklearn.neural_network import MLPRegressor
-from sknn.mlp import Regressor, Layer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler
 import pickle
 from scipy.linalg import get_blas_funcs
 from scipy.linalg import blas as FB
 from sklearn.utils.extmath import fast_dot
-import pbcvt
+#import pbcvt
 import treXton
 from sklearn import preprocessing
 
@@ -64,7 +61,8 @@ symbols = ['vw',
 symbols = ['linux',
            'firefox',
            'logitech',
-           'camel']
+           'camel',
+           'background']
        
 def train_classifier_draug(path,
                            max_textons=None,
@@ -84,7 +82,7 @@ def train_classifier_draug(path,
     histograms = []
     labels = []
 
-    base_dir = "/home/pold/Documents/draug/"
+    base_dir = "/home/pold/Documents/Internship/image_recorder/"
 
     for symbol in symbols:
 
@@ -134,7 +132,7 @@ def train_classifier_draug(path,
 
                 histograms.append(query_histograms)
 
-                np.savetxt(symbol + ".csv", query_histograms, delimiter=",", fmt='%d')
+            np.savetxt(symbol + ".csv", histograms, delimiter=",", fmt='%d')
 
         np.save("histograms_logos.npy", np.array(histograms))
         np.save("labels.npy", np.array(labels))

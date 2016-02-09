@@ -95,7 +95,7 @@ def main(args):
         pred = clf.predict(query_histograms)
         probs = clf.predict_proba(query_histograms)
 
-        print("pred is", pred)
+        print("pred is", pred[0])
 
         for i in zip(clf.classes_, probs[0]):
             print i

@@ -64,11 +64,11 @@ def RGB2Opponent(img):
 
 
     #prod = pbcvt.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
-    prod = np.dot(img.reshape(img_height * img_width, 3), A.T).reshape(img_height, img_width, 3)
+    prod = np.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
 
     # DEBUG ARDRONE
-    prod = cv2.cvtColor(img, cv2.COLOR_RGB2YUV)
-    prod = prod.astype(int)
+    #prod = cv2.cvtColor(img, cv2.COLOR_RGB2YUV)
+    #prod = prod.astype(int)
     
     return prod
 
@@ -165,7 +165,6 @@ def extract_textons(img, max_textons, args, real_max_textons, channel):
     else:
         new_patches = patches
 
-    
         
     return new_patches, texton_positions
 
