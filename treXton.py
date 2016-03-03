@@ -36,11 +36,13 @@ import configargparse
 from treXtonConfig import parser
 from sklearn.metrics.pairwise import chi2_kernel
 from sklearn.pipeline import Pipeline
+from sklearn import linear_model
 from sklearn.preprocessing import MinMaxScaler
 import pickle
 from scipy.linalg import get_blas_funcs
 from scipy.linalg import blas as FB
 from sklearn.utils.extmath import fast_dot
+from sklearn.svm import SVR
 
 tfidf = TfidfTransformer()
 
@@ -54,17 +56,16 @@ def mydist(x, y):
 
 def RGB2Opponent(img):
 
+    img_h = img.shape[0]
+    img_w = img.shape[1]
+
     A = np.array([[0.06, 0.63, 0.27],
                    [0.30, 0.04, -0.35],
                    [0.34, -0.60, 0.17]]).astype(np.float32)
     img = img.astype(np.float32)
 
-    img_width = 320
-    img_height = 240
-
-
     #prod = pbcvt.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
-    prod = np.dot(img.reshape(480 * 640, 3), A.T).reshape(480, 640, 3)
+    prod = np.dot(img.reshape(img_h * img_w, 3), A.T).reshape(img_h, img_w, 3)
 
     # DEBUG ARDRONE
     #prod = cv2.cvtColor(img, cv2.COLOR_RGB2YUV)
@@ -513,6 +514,7 @@ def train_regression_draug(path,
     testimgs_path = args.test_imgs_path
     #coordinates = pd.read_csv(base_dir + "targets_gtl.csv")
     coordinates_gtl = pd.read_csv(args.ground_truth_labeler)
+    coordinates_gtu = pd.read_csv(args.gt_unfiltered)
    # coordinates_draug = pd.read_csv("../draug/targets.csv")
 
     classifiers = []
@@ -587,7 +589,7 @@ def train_regression_draug(path,
     else:
 
         if args.use_draug_folder:
-            picturevariants = 15
+            picturevariants = 7
         else:
             picturevariants = 1
 
@@ -636,9 +638,17 @@ def train_regression_draug(path,
                         query_image[:, :, channel] = query_image[:, :, channel] / stdv
 
                 top_left_x = coordinates_gtl.ix[i, "x"]
+                top_left_x_gtu = coordinates_gtu.ix[i, "x"]
+
+                if (top_left_x == -1) or (top_left_x_gtu == -1):
+                    print "minus 1"
+                    break
+                
                 top_left_y = coordinates_gtl.ix[i, "y"]
-                matches = coordinates_gtl.ix[i, "matches"]
-                num_matches.append(matches)
+
+                if args.sample_weight:
+                    matches = coordinates_gtl.ix[i, "matches"]
+                    num_matches.append(matches)
 
                 if args.do_separate:
                     y_top_left.append(top_left_x)
@@ -662,63 +672,76 @@ def train_regression_draug(path,
         np.save("histograms.npy", np.array(histograms))
         np.save("y_top_left.npy", np.array(y_top_left))
         np.save("y_bottom_right.npy", np.array(y_bottom_right))
-        np.save("num_matches.npy", np.array(num_matches))                        
-                
+        if args.sample_weight:
+            np.save("num_matches.npy", np.array(num_matches))       
 
     if args.tfidf:
         histograms = tfidf.fit_transform(histograms).todense()
         joblib.dump(tfidf, 'classifiers/tfidf.pkl')
 
-    if args.do_separate:
-        if args.load_clf_settings:
-            clf_x_coord = pickle.load(open("hyperopt_clf_x.p", "rb" ))
-            clf_y_coord = pickle.load(open("hyperopt_clf_y.p", "rb" ))
-        else:
-            pass
-            #K = chi2_kernel(histograms, gamma=.5)                
-            #dist = DistanceMetric.get_metric(mydist)        
-            #clf_x_coord = lm.TheilSenRegressor()
-            #clf_y_coord = lm.TheilSenRegressor()
+    # if args.do_separate:
+    #     if args.load_clf_settings:
+    #         clf_x_coord = pickle.load(open("hyperopt_clf_x.p", "rb" ))
+    #         clf_y_coord = pickle.load(open("hyperopt_clf_y.p", "rb" ))
 
-            #clf_x_coord = xgb.XGBRegressor(**arguments)
-            #clf_y_coord = xgb.XGBRegressor(**arguments)
-            #clf_x_coord = svm.LinearSVR(epsilon=0)
-            #clf_y_coord = svm.LinearSVR(epsilon=0)
-            #clf_x_coord = RandomForestRegressor(50, n_jobs=-1)
-            #clf_y_coord = RandomForestRegressor(50, n_jobs=-1)
-            #clf_x_coord = lm.BayesianRidge(normalize=True)
-            #clf_y_coord = lm.BayesianRidge(normalize=True)
-            #clf_x_coord = AdaBoostRegressor()
-            #clf_y_coord = AdaBoostRegressor()            
-            #clf_x_coord = GradientBoostingRegressor()
-            #clf_y_coord = GradientBoostingRegressor()
-            #clf_x_coord = GaussianProcessRegressor()
-            #clf_y_coord = GaussianProcessRegressor()
-            clf_x_coord = KNeighborsRegressor(weights='distance', metric=mydist)
-            clf_y_coord = KNeighborsRegressor(weights='distance', metric=mydist)
-            #clf_x_coord = KNeighborsRegressor(3, weights='distance')
-            #clf_y_coord = KNeighborsRegressor(3, weights='distance')
+    #     else:
+    #         #K = chi2_kernel(histograms, gamma=.5)                
+    #         #dist = DistanceMetric.get_metric(mydist)        
+    #         #clf_x_coord = lm.TheilSenRegressor()
+    #         #clf_y_coord = lm.TheilSenRegressor()
+
+    #         clf_x_coord = xgb.XGBRegressor(**arguments)
+    #         clf_y_coord = xgb.XGBRegressor(**arguments)
+    #         #clf_x_coord = svm.LinearSVR(epsilon=0)
+    #         #clf_y_coord = svm.LinearSVR(epsilon=0)
+    #         #clf_x_coord = RandomForestRegressor(500, n_jobs=-1)
+    #         #clf_y_coord = RandomForestRegressor(500, n_jobs=-1)
+    #         #clf_x_coord = lm.BayesianRidge(normalize=True)
+    #         #clf_y_coord = lm.BayesianRidge(normalize=True)
+    #         #clf_x_coord = AdaBoostRegressor()
+    #         #clf_y_coord = AdaBoostRegressor()            
+    #         #clf_x_coord = GradientBoostingRegressor()
+    #         #clf_y_coord = GradientBoostingRegressor()
+    #         #clf_x_coord = GaussianProcessRegressor()
+    #         #clf_y_coord = GaussianProcessRegressor()
+    #         #clf_x_coord = KNeighborsRegressor(weights='distance')
+    #         #clf_y_coord = KNeighborsRegressor(weights='distance')
+    #         #clf_x_coord = KNeighborsRegressor(3, weights='distance')
+    #         #clf_y_coord = KNeighborsRegressor(3, weights='distance')
             
-            #clf_x_coord = LinearRegression()
-            #clf_y_coord = LinearRegression()                
-            #clf_x_coord = MLPRegressor()
-            #clf_y_coord = MLPRegressor()
+    #         #clf_x_coord = LinearRegression()
+    #         #clf_y_coord = LinearRegression()                
+    #         #clf_x_coord = MLPRegressor()
+    #         #clf_y_coord = MLPRegressor()
 
 
-    else:
-        clf0 = RandomForestRegressor(500, n_jobs=-1)
-        clf1 = RandomForestRegressor(500, n_jobs=-1)
-        #clf0 = GaussianProcess(theta0=0.1, thetaL=.001, thetaU=1.)
-        #clf1 = GaussianProcess(theta0=0.1, thetaL=.001, thetaU=1.)
-        #clf0 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=11)
-        #clf0 = KNeighborsRegressor(weights='uniform', n_neighbors=7, p=3)
-        #clf1 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=9)
-        clfs = [clf0, clf1]
+    # else:
+    #     clf0 = RandomForestRegressor(500, n_jobs=-1)
+    #     clf1 = RandomForestRegressor(500, n_jobs=-1)
+    #     #clf0 = GaussianProcess(theta0=0.1, thetaL=.001, thetaU=1.)
+    #     #clf1 = GaussianProcess(theta0=0.1, thetaL=.001, thetaU=1.)
+    #     #clf0 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=11)
+    #     #clf0 = KNeighborsRegressor(weights='uniform', n_neighbors=7, p=3)
+    #     #clf1 = KNeighborsRegressor(algorithm='kd_tree', weights='distance', n_neighbors=9)
+    #     clfs = [clf0, clf1]
         
         
 
     if args.do_separate:
         print("Fitting")
+        # clf_x_coord = RandomForestRegressor(500)
+        # clf_y_coord = RandomForestRegressor(500)
+        #clf_x_coord = linear_model.Lasso(max_iter=100000)
+        #clf_y_coord = linear_model.Lasso(max_iter=100000)              
+        #clf_x_coord = svm.SVR(C=1000, kernel='linear')
+        #clf_y_coord = svm.SVR(C=1000, kernel='linear')
+        clf_x_coord = RandomForestRegressor(500)
+        clf_y_coord = RandomForestRegressor(500)
+        #clf_x_coord = AdaBoostRegressor(n_estimators=500, learning_rate=0.9, loss='linear')
+        #clf_y_coord = AdaBoostRegressor(n_estimators=500, learning_rate=0.9, loss='linear')
+
+
+        print("length is", len(histograms))
 
         if args.use_xgboost:
             num_round = 500
@@ -759,9 +782,10 @@ def train_regression_draug(path,
             joblib.dump(clf_y_coord, 'classifiers/clf_y.pkl') 
         
     else:
-        for j, clf in enumerate(clfs):
-            clf.fit(histograms, y_top_left)
-            joblib.dump(clf, "classifiers/clf" + str(j) + ".pkl") 
+        #for j, clf in enumerate(clfs):
+        clf = RandomForestRegressor(500)
+        clf.fit(histograms, y_top_left)
+        joblib.dump(clf, "classifiers/clf_multi.pkl") 
 
     return clf, histograms, y_top_left, classifier, weights
 
@@ -807,10 +831,10 @@ def main_draug(args):
         errors_x = []
         errors_y = []
         
-        for i in range(args.num_draug_pics):
+        for i in range(args.num_test_pics):
 
-            query_file = genimgs_path + str(i) + ".png"
-            query_image = imread_opponent_gray(query_file)
+            query_file = args.test_imgs_path + str(i) + ".png"
+            query_image = imread_opponent(query_file)
 
             # previously: histograms[patch]
             histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
@@ -833,65 +857,6 @@ def main_draug(args):
 
         print("Mean error x", np.mean(errors_x))
         print("Mean error y", np.mean(errors_y))
-
-    if args.test_on_validset:
-
-        errors_x = []
-        errors_y = []
-        
-        for i in range(args.start_valid, args.start_valid + args.num_valid_pics):
-
-            query_file = genimgs_path + str(i) + ".png"
-            query_image = imread_opponent_gray(query_file)
-
-            # previously: histograms[patch]
-            histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
-
-            top_left_x = coordinates.ix[i, "x"]
-            top_left_y = coordinates.ix[i, "y"]
-            
-            pred_top_left = rf_top_left.predict([histogram])
-            print("pred is", pred_top_left)
-            print("real values", (top_left_x, top_left_y))
-
-            diff_x = abs(pred_top_left[0][0] - top_left_x)
-            diff_y = abs(pred_top_left[0][1] - top_left_y)
-            
-            print("diff x", diff_x)
-            print("diff y", diff_y)
-
-            errors_x.append(diff_x)
-            errors_y.append(diff_y)
-
-        print("Mean error x (valid)", np.mean(errors_x))
-        print("Mean error y (valid)", np.mean(errors_y))
-
-
-
-    if args.test_on_testset:
-
-        predictions = []
-
-        offset = args.start_pic_num # Discard the first pictures
-        for i in range(offset, offset + args.num_test_pics):
-
-            query_file = testimgs_path + str(i) + ".jpg"
-            query_image = imread_opponent_gray(query_file)
-
-            histogram = img_to_texton_histogram(query_image, classifier, max_textons, n_clusters, weights, args)
-
-            if args.show_graphs:
-                display_histogram(histogram)
-
-            pred_top_left = rf_top_left.predict([histogram])
-            print("pred is", pred_top_left)
-
-            predictions.append(pred_top_left[0])
-
-        np.save("predictions", np.array(predictions))
-
-        if args.use_optitrack: 
-            pass
 
 if __name__ == "__main__":
 

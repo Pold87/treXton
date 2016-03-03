@@ -29,6 +29,7 @@ parser.add_argument("-hs", "--histogram_standardize", default=False, help="Stand
 parser.add_argument("-ud", "--use_dipoles", default=False, help="Standardize the (grayscale) picture using histogram equalization", action="store_true")
 parser.add_argument("-ls", "--local_standardize", default=False, help="Use local standardization", action="store_true")
 parser.add_argument("-gtl", "--ground_truth_labeler", help="Path of SIFT ground truth csv file")
+parser.add_argument("-gtu", "--gt_unfiltered", help="Path of SIFT ground truth csv file (unfiltered)")
 parser.add_argument("-m", "--mymap", default="../draug/img/bestnewmat.png", help="Path to the mat image")
 parser.add_argument("-mo", "--mode", default=0, help="Use the camera (0), test on train pictures (1), test on test pictures (2)", type=int)
 parser.add_argument("-p", "--predictions", default="predictions.npy", help="Path to the predictions of extract_textons_draug.py")
@@ -46,6 +47,7 @@ parser.add_argument("--sample_weight", default=False, help="Use sample weight in
 parser.add_argument("--use_xgboost", default=False, help="Use native xgboost python interface", action="store_true")
 parser.add_argument("--logos_path", default="/home/pold/orthomap/", help="Path which incldues subfolder to the images of the different logos")
 parser.add_argument("--max_imgs_per_class", default=500, help="Maximum images for treXton classification", type=int)
+parser.add_argument("--prediction_variance", default=False, action="store_true", help="Use prediction varianc from random forest etc.")
 
 if __name__ == "__main__":
    args = parser.parse_known_args()
