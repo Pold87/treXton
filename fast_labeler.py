@@ -80,7 +80,7 @@ def main(args):
 
         texton_hists.append(all_hists)
 
-    np.savetxt("mat_test_hists.csv", texton_hists, delimiter=",", fmt='%d') 
+    np.savetxt("mat_train_hists_cross.csv", texton_hists, delimiter=",", fmt='%d') 
 
 
 if __name__ == "__main__":

@@ -45,7 +45,7 @@ def main(args):
     #    print a
     #print clf_y.feature_importances_
 
-    fp = open("predictions.csv", "w")
+    fp = open("predictions_cross.csv", "w")
 
     for i in range(args.num_test_pics):
 
